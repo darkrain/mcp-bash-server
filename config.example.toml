@@ -1,0 +1,15 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+base_url = "/mcp"
+# api_key = "your-secret-api-key"
+
+[bash]
+# allowed_commands = ["ls", "cat", "grep", "awk", "sed", "find", "ps", "df", "du", "top", "htop", "curl", "wget", "ping", "git", "docker", "kubectl", "helm"]
+timeout = 30
+max_output_size = 1048576
+
+[log]
+level = "info"
+format = "json"
+output = "stderr"

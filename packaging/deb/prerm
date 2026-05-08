@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+echo "Stopping mcp-bash-server..."
+
+# Stop and disable service
+if systemctl is-active --quiet mcp-bash-server; then
+    systemctl stop mcp-bash-server
+fi
+
+if systemctl is-enabled --quiet mcp-bash-server 2>/dev/null; then
+    systemctl disable mcp-bash-server
+fi
+
+exit 0

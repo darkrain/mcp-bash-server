@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+
+echo "Setting up mcp-bash-server..."
+
+# Create user if it doesn't exist
+if ! id -u mcp >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin mcp
+    echo "Created user: mcp"
+fi
+
+# Set permissions
+chown mcp:mcp /etc/mcp-bash-server/config.toml
+chmod 640 /etc/mcp-bash-server/config.toml
+
+# Reload systemd
+systemctl daemon-reload
+
+echo "mcp-bash-server installed successfully!"
+echo ""
+echo "Next steps:"
+echo "  1. Edit /etc/mcp-bash-server/config.toml to configure the server"
+echo "  2. Set API key: export MCP_API_KEY=your-secret-key"
+echo "  3. Start the service: systemctl enable --now mcp-bash-server"
+echo ""
+echo "Check status: systemctl status mcp-bash-server"
+echo "View logs: journalctl -u mcp-bash-server -f"

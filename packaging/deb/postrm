@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+echo "Cleaning up mcp-bash-server..."
+
+# Clean up systemd
+systemctl daemon-reload
+
+# Remove user (optional, keep for now)
+# userdel mcp 2>/dev/null || true
+
+exit 0

@@ -1,0 +1,14 @@
+Package: mcp-bash-server
+Version: VERSION
+Section: net
+Priority: optional
+Architecture: ARCH
+Depends: systemd
+Maintainer: MCP Bash Server Team
+Description: MCP server for executing bash commands via HTTP transport
+ MCP Bash Server is a Model Context Protocol (MCP) server that allows
+ AI agents to execute bash commands on a remote server through HTTP.
+ It uses the official go-sdk for MCP and supports configurable command
+ allowlists, timeouts, and API key authentication.
+Installed-Size: INSTALLED_SIZE
+Homepage: https://github.com/your-org/mcp-bash-server

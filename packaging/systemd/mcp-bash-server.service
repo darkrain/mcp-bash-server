@@ -1,0 +1,40 @@
+[Unit]
+Description=MCP Bash Server
+Documentation=https://github.com/your-org/mcp-bash-server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=mcp
+Group=mcp
+ExecStart=/usr/bin/mcp-bash-server
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mcp-bash-server
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Environment
+Environment="MCP_CONFIG_PATH=/etc/mcp-bash-server/config.toml"
+Environment="MCP_LOG_LEVEL=info"
+
+[Install]
+WantedBy=multi-user.target
