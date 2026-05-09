@@ -15,22 +15,23 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mcp-bash-server
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/tmp
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-RestrictRealtime=true
-RestrictNamespaces=true
-LockPersonality=true
-MemoryDenyWriteExecute=true
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
+# Security hardening (disabled to allow sudo and unrestricted bash access)
+# If you want restricted access, remove these comments and adjust:
+# NoNewPrivileges=true
+# ProtectSystem=strict
+# ProtectHome=true
+# ReadWritePaths=/tmp
+# PrivateTmp=true
+# ProtectKernelTunables=true
+# ProtectKernelModules=true
+# ProtectControlGroups=true
+# RestrictSUIDSGID=true
+# RestrictRealtime=true
+# RestrictNamespaces=true
+# LockPersonality=true
+# MemoryDenyWriteExecute=true
+# SystemCallFilter=@system-service
+# SystemCallErrorNumber=EPERM
 
 # Environment
 Environment="MCP_CONFIG_PATH=/etc/mcp-bash-server/config.toml"

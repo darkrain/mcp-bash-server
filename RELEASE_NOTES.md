@@ -1,16 +1,12 @@
-# Release v1.0.2
+# Release v1.0.3
 
 ## What's New
 
-- **Command Logging (Bash History)** — все выполненные команды теперь логируются с exit_code и duration. Аналог `bash history` для аудита.
-  ```json
-  {"time":"...","level":"INFO","msg":"command started","command":"ls -la","cwd":"/home","timeout":30}
-  {"time":"...","level":"INFO","msg":"command completed","command":"ls -la","exit_code":0,"duration_ms":42}
-  ```
-- Отключить: `log_commands = false` в конфиге
+- **Fixed sudo in systemd service** — убран `NoNewPrivileges=true` и другие hardening опции из systemd unit, которые блокировали sudo. Теперь команды с `sudo` работают корректно.
 
-## Features (from v1.0.1)
+## Features (from v1.0.2)
 
+- **Command Logging (Bash History)** — все выполненные команды логируются с exit_code и duration
 - **Wildcard Support** — `allowed_commands = ["*"]` или `["all"]` для разрешения любых команд
 - **Streamable HTTP Transport** — официальный MCP протокол через HTTP
 - **SSH-like Server Identification** — hostname, IP, user, OS в описании инструментов
@@ -19,7 +15,6 @@
 - **Static Linking** — работает на любой Linux без зависимостей от libc
 - **Multi-Architecture** — amd64 и arm64
 - **Debian Packages** — готовые `.deb` для установки
-- **systemd Service** — с security hardening
 
 ## Configuration
 
@@ -47,8 +42,8 @@ format = "json"
 |------|------|-------------|
 | `mcp-bash-server_amd64` | ~7.8MB | amd64 static binary |
 | `mcp-bash-server_arm64` | ~7.3MB | arm64 static binary |
-| `mcp-bash-server_1.0.2_amd64.deb` | ~2.5MB | Debian package for amd64 |
-| `mcp-bash-server_1.0.2_arm64.deb` | ~2.1MB | Debian package for arm64 |
+| `mcp-bash-server_1.0.3_amd64.deb` | ~2.5MB | Debian package for amd64 |
+| `mcp-bash-server_1.0.3_arm64.deb` | ~2.1MB | Debian package for arm64 |
 
 ## Links
 
