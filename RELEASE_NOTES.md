@@ -1,8 +1,10 @@
-# Release v1.0.0
+# Release v1.0.1
 
-MCP Bash Server — "SSH для AI агентов". MCP сервер для выполнения bash команд на сервере через HTTP транспорт.
+## What's New
 
-## Features
+- **Wildcard Support for `allowed_commands`** — теперь можно разрешить все команды через `allowed_commands = ["*"]` или `["all"]`
+
+## Features (from v1.0.0)
 
 - **Streamable HTTP Transport** — официальный MCP протокол через HTTP (modelcontextprotocol/go-sdk)
 - **SSH-like Server Identification** — каждый инструмент показывает hostname, IP, user, OS чтобы агент понимал с каким сервером работает
@@ -14,19 +16,6 @@ MCP Bash Server — "SSH для AI агентов". MCP сервер для вы
 - **Debian Packages** — готовые `.deb` пакеты для установки на сервер
 - **systemd Service** — автозапуск с security hardening (seccomp, namespaces)
 - **JSON Logging** — configurable log levels и форматы
-
-## Quick Start
-
-```bash
-# Download and run binary
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.0/mcp-bash-server_amd64
-chmod +x mcp-bash-server_amd64
-MCP_API_KEY=your-secret ./mcp-bash-server_amd64
-
-# Or install via .deb
-sudo dpkg -i mcp-bash-server_1.0.0_amd64.deb
-sudo systemctl enable --now mcp-bash-server
-```
 
 ## Configuration
 
@@ -40,7 +29,10 @@ base_url = "/mcp"
 api_key = "your-secret-api-key"
 
 [bash]
-allowed_commands = ["ls", "cat", "ps", "df", "git"]
+# Allow all commands:
+allowed_commands = ["*"]
+# Or specific commands:
+# allowed_commands = ["ls", "cat", "ps", "df", "git"]
 timeout = 30
 max_output_size = 1048576
 
@@ -49,32 +41,17 @@ level = "info"
 format = "json"
 ```
 
-## MCP Tool: `bash`
+## Quick Start
 
-Input:
-- `command` — команда для выполнения
-- `args` — аргументы (опционально)
-- `timeout` — таймаут в секундах (опционально)
-- `cwd` — рабочая директория (опционально)
+```bash
+# Download binary
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.1/mcp-bash-server_amd64
+chmod +x mcp-bash-server_amd64
+MCP_API_KEY=your-secret ./mcp-bash-server_amd64
 
-Output:
-- `stdout` — стандартный вывод
-- `stderr` — ошибки
-- `exit_code` — код возврата
-- `duration_ms` — время выполнения
-
-## Architecture
-
-```
-┌─────────────────┐     HTTP/JSON-RPC      ┌──────────────────┐
-│   MCP Client    │ ◄────────────────────► │  MCP Bash Server │
-│  (AI Agent)     │                        │   (this repo)    │
-└─────────────────┘                        └──────────────────┘
-                                                    │
-                                                    ▼
-                                           ┌──────────────────┐
-                                           │   bash execution │
-                                           └──────────────────┘
+# Or install via .deb
+sudo dpkg -i mcp-bash-server_1.0.1_amd64.deb
+sudo systemctl enable --now mcp-bash-server
 ```
 
 ## Artifacts
@@ -83,8 +60,8 @@ Output:
 |------|------|-------------|
 | `mcp-bash-server_amd64` | ~7.8MB | amd64 static binary |
 | `mcp-bash-server_arm64` | ~7.3MB | arm64 static binary |
-| `mcp-bash-server_1.0.0_amd64.deb` | ~2.5MB | Debian package for amd64 |
-| `mcp-bash-server_1.0.0_arm64.deb` | ~2.1MB | Debian package for arm64 |
+| `mcp-bash-server_1.0.1_amd64.deb` | ~2.5MB | Debian package for amd64 |
+| `mcp-bash-server_1.0.1_arm64.deb` | ~2.1MB | Debian package for arm64 |
 
 ## Links
 
