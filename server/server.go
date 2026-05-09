@@ -65,21 +65,32 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if len(cfg.Bash.AllowedCommands) > 0 {
-			cmdName := strings.Fields(input.Command)[0]
-			found := false
+			// Check for wildcard "*" or "all" to allow any command
+			allowsAll := false
 			for _, allowed := range cfg.Bash.AllowedCommands {
-				if cmdName == allowed {
-					found = true
+				if allowed == "*" || allowed == "all" {
+					allowsAll = true
 					break
 				}
 			}
-			if !found {
-				return &mcp.CallToolResult{
-					IsError: true,
-					Content: []mcp.Content{
-						&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", cmdName)},
-					},
-				}, BashOutput{}, nil
+
+			if !allowsAll {
+				cmdName := strings.Fields(input.Command)[0]
+				found := false
+				for _, allowed := range cfg.Bash.AllowedCommands {
+					if cmdName == allowed {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", cmdName)},
+						},
+					}, BashOutput{}, nil
+				}
 			}
 		}
 

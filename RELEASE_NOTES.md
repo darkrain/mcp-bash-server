@@ -1,0 +1,93 @@
+# Release v1.0.0
+
+MCP Bash Server — "SSH для AI агентов". MCP сервер для выполнения bash команд на сервере через HTTP транспорт.
+
+## Features
+
+- **Streamable HTTP Transport** — официальный MCP протокол через HTTP (modelcontextprotocol/go-sdk)
+- **SSH-like Server Identification** — каждый инструмент показывает hostname, IP, user, OS чтобы агент понимал с каким сервером работает
+- **Bash Command Execution** — выполнение команд с таймаутом, ограничением вывода и валидацией UTF-8
+- **Command Allowlist** — белый список разрешённых команд для безопасности
+- **API Key Authentication** — через заголовок `Authorization: Bearer ...` или `X-API-Key`
+- **Static Linking** — бинарник не зависит от версии libc, работает на любой Linux системе
+- **Multi-Architecture** — сборки для `amd64` и `arm64`
+- **Debian Packages** — готовые `.deb` пакеты для установки на сервер
+- **systemd Service** — автозапуск с security hardening (seccomp, namespaces)
+- **JSON Logging** — configurable log levels и форматы
+
+## Quick Start
+
+```bash
+# Download and run binary
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.0/mcp-bash-server_amd64
+chmod +x mcp-bash-server_amd64
+MCP_API_KEY=your-secret ./mcp-bash-server_amd64
+
+# Or install via .deb
+sudo dpkg -i mcp-bash-server_1.0.0_amd64.deb
+sudo systemctl enable --now mcp-bash-server
+```
+
+## Configuration
+
+Config file: `/etc/mcp-bash-server/config.toml`
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8080
+base_url = "/mcp"
+api_key = "your-secret-api-key"
+
+[bash]
+allowed_commands = ["ls", "cat", "ps", "df", "git"]
+timeout = 30
+max_output_size = 1048576
+
+[log]
+level = "info"
+format = "json"
+```
+
+## MCP Tool: `bash`
+
+Input:
+- `command` — команда для выполнения
+- `args` — аргументы (опционально)
+- `timeout` — таймаут в секундах (опционально)
+- `cwd` — рабочая директория (опционально)
+
+Output:
+- `stdout` — стандартный вывод
+- `stderr` — ошибки
+- `exit_code` — код возврата
+- `duration_ms` — время выполнения
+
+## Architecture
+
+```
+┌─────────────────┐     HTTP/JSON-RPC      ┌──────────────────┐
+│   MCP Client    │ ◄────────────────────► │  MCP Bash Server │
+│  (AI Agent)     │                        │   (this repo)    │
+└─────────────────┘                        └──────────────────┘
+                                                    │
+                                                    ▼
+                                           ┌──────────────────┐
+                                           │   bash execution │
+                                           └──────────────────┘
+```
+
+## Artifacts
+
+| File | Size | Description |
+|------|------|-------------|
+| `mcp-bash-server_amd64` | ~7.8MB | amd64 static binary |
+| `mcp-bash-server_arm64` | ~7.3MB | arm64 static binary |
+| `mcp-bash-server_1.0.0_amd64.deb` | ~2.5MB | Debian package for amd64 |
+| `mcp-bash-server_1.0.0_arm64.deb` | ~2.1MB | Debian package for arm64 |
+
+## Links
+
+- Repository: https://github.com/darkrain/mcp-bash-server
+- MCP Spec: https://modelcontextprotocol.io
+- Go SDK: https://github.com/modelcontextprotocol/go-sdk
