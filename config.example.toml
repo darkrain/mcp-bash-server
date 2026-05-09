@@ -2,12 +2,19 @@
 host = "0.0.0.0"
 port = 8080
 base_url = "/mcp"
-# api_key = "your-secret-api-key"
+api_key = "your-secret-api-key"  # Необязательно
 
 [bash]
-# allowed_commands = ["ls", "cat", "grep", "awk", "sed", "find", "ps", "df", "du", "top", "htop", "curl", "wget", "ping", "git", "docker", "kubectl", "helm"]
+# Разрешить ВСЕ команды (wildcard):
+allowed_commands = ["*"]
+# Или разрешить конкретные команды:
+# allowed_commands = ["ls", "cat", "ps", "df", "git"]
 timeout = 30
 max_output_size = 1048576
+
+# Логирование всех выполненных команд (аналог bash history)
+# По умолчанию: true
+log_commands = true
 
 [log]
 level = "info"

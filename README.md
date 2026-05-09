@@ -55,6 +55,10 @@ allowed_commands = ["*"]
 timeout = 30
 max_output_size = 1048576
 
+# Логирование всех выполненных команд (аналог bash history)
+# По умолчанию: true
+log_commands = true
+
 [log]
 level = "info"
 format = "json"
@@ -68,6 +72,25 @@ format = "json"
 - `[]` (пустой список) — никакие команды не разрешены
 
 **Рекомендация:** Несмотря на поддержку wildcard, рекомендуется использовать белый список команд для безопасности.
+
+### Логирование команд (аналог bash history)
+
+По умолчанию все выполненные команды логируются:
+```json
+{"time":"...","level":"INFO","msg":"command started","command":"ls -la","cwd":"/home","timeout":30}
+{"time":"...","level":"INFO","msg":"command completed","command":"ls -la","exit_code":0,"duration_ms":42}
+```
+
+Отключить логирование:
+```toml
+[bash]
+log_commands = false
+```
+
+Логи доступны через journalctl:
+```bash
+journalctl -u mcp-bash-server -f
+```
 
 ### Переменные окружения
 
@@ -100,8 +123,8 @@ format = "json"
 В настройках MCP Client Tool в n8n **всегда** указывайте URL со слэшем на конце:
 
 ```
-http://89.169.34.209:8080/mcp/    ← правильно (со слэшем)
-http://89.169.34.209:8080/mcp     ← неправильно (без слэша)
+http://<your-server-ip>:8080/mcp/    ← правильно (со слэшем)
+http://<your-server-ip>:8080/mcp     ← неправильно (без слэша)
 ```
 
 ### Права sudo для команды rm, apt и т.д.

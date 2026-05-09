@@ -24,6 +24,7 @@ type BashConfig struct {
 	AllowedCommands []string `toml:"allowed_commands"`
 	Timeout         int      `toml:"timeout"`
 	MaxOutputSize   int      `toml:"max_output_size"`
+	LogCommands     bool     `toml:"log_commands"`
 }
 
 type LogConfig struct {
@@ -44,6 +45,7 @@ func DefaultConfig() *Config {
 			AllowedCommands: []string{},
 			Timeout:         30,
 			MaxOutputSize:   1048576,
+			LogCommands:     true,
 		},
 		Log: LogConfig{
 			Level:  "info",
