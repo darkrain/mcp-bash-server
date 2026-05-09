@@ -27,13 +27,9 @@ MCP сервер для выполнения bash команд на сервер
 
 ```bash
 # Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.3/mcp-bash-server_1.0.3_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.3_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.1/mcp-bash-server_1.0.4-alpha.1_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.1_amd64.deb
 sudo systemctl enable --now mcp-bash-server
-
-# Проверить статус
-systemctl status mcp-bash-server
-journalctl -u mcp-bash-server -f
 ```
 
 ### Обновление

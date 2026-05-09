@@ -27,6 +27,28 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func maybeRedactToken(tok string) string {
+	lower := strings.ToLower(tok)
+	for _, keyword := range []string{"password", "secret", "token", "key"} {
+		if strings.Contains(lower, keyword) {
+			for _, sep := range []string{"=", ":"} {
+				if idx := strings.Index(tok, sep); idx >= 0 {
+					return tok[:idx+1] + "***REDACTED***"
+				}
+			}
+		}
+	}
+	return tok
+}
+
+func redactCommand(cmd string) string {
+	tokens := strings.Split(cmd, " ")
+	for i, tok := range tokens {
+		tokens[i] = maybeRedactToken(tok)
+	}
+	return strings.Join(tokens, " ")
+}
+
 type BashOutput struct {
 	Stdout   string `json:"stdout" jsonschema:"standard output of the command"`
 	Stderr   string `json:"stderr" jsonschema:"standard error of the command"`
@@ -113,31 +135,43 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if cfg.Bash.LogCommands {
-			logger.Info("command started", "command", cmdStr, "cwd", input.Cwd, "timeout", timeout)
+			logger.Info("command started", "command", redactCommand(cmdStr), "cwd", input.Cwd, "timeout", timeout)
+		}
+
+		var stdoutBuf, stderrBuf bytes.Buffer
+
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+			defer cancel()
 		}
 
 		cmd := exec.CommandContext(ctx, input.Command, args...)
 		if input.Cwd != "" {
 			cmd.Dir = input.Cwd
 		}
-
-		var stdoutBuf, stderrBuf bytes.Buffer
 		cmd.Stdout = &stdoutBuf
 		cmd.Stderr = &stderrBuf
-
 		if timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-			defer cancel()
-			cmd = exec.CommandContext(ctx, input.Command, args...)
-			if input.Cwd != "" {
-				cmd.Dir = input.Cwd
-			}
-			cmd.Stdout = &stdoutBuf
-			cmd.Stderr = &stderrBuf
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		}
 
-		err := cmd.Run()
+		var err error
+		if startErr := cmd.Start(); startErr == nil {
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err = <-done:
+			case <-ctx.Done():
+				if cmd.Process != nil {
+					_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				}
+				<-done
+				err = ctx.Err()
+			}
+		} else {
+			err = startErr
+		}
 		duration := time.Since(start).Milliseconds()
 
 		exitCode := 0
@@ -153,11 +187,10 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if cfg.Bash.LogCommands {
-			logger.Info("command completed", "command", cmdStr, "exit_code", exitCode, "duration_ms", duration)
+			logger.Info("command completed", "command", redactCommand(cmdStr), "exit_code", exitCode, "duration_ms", duration)
 		}
 
-		stdout := truncateString(stdoutBuf.String(), cfg.Bash.MaxOutputSize/2)
-		stderr := truncateString(stderrBuf.String(), cfg.Bash.MaxOutputSize/2)
+		stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
 
 		if !utf8.ValidString(stdout) {
 			stdout = "[binary output truncated]"
@@ -207,6 +240,34 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 	})
 
 	return server, si
+}
+
+func truncateOutputs(stdout, stderr string, maxTotal int) (string, string) {
+	if maxTotal <= 0 {
+		return stdout, stderr
+	}
+	total := len(stdout) + len(stderr)
+	if total <= maxTotal {
+		return stdout, stderr
+	}
+	if stdout == "" {
+		return "", truncateString(stderr, maxTotal)
+	}
+	if stderr == "" {
+		return truncateString(stdout, maxTotal), ""
+	}
+	ratio := float64(len(stdout)) / float64(total)
+	maxOut := int(float64(maxTotal) * ratio)
+	maxErr := maxTotal - maxOut
+	if maxOut < 256 {
+		maxOut = 256
+		maxErr = maxTotal - maxOut
+	}
+	if maxErr < 256 {
+		maxErr = 256
+		maxOut = maxTotal - maxErr
+	}
+	return truncateString(stdout, maxOut), truncateString(stderr, maxErr)
 }
 
 func truncateString(s string, maxLen int) string {

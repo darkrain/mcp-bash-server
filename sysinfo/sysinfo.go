@@ -116,10 +116,10 @@ func getIPs() []string {
 		}
 		for _, addr := range addrs {
 			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-				if ipNet.IP.To4() != nil {
-					ips = append(ips, ipNet.IP.String())
-				} else if ipNet.IP.To16() != nil {
-					ips = append(ips, ipNet.IP.String())
+				if ip := ipNet.IP.To4(); ip != nil {
+					ips = append(ips, ip.String())
+				} else if ip := ipNet.IP.To16(); ip != nil && !ip.IsLinkLocalUnicast() && !ip.IsMulticast() {
+					ips = append(ips, ip.String())
 				}
 			}
 		}

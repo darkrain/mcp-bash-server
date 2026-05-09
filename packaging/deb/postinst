@@ -13,6 +13,27 @@ fi
 chown mcp:mcp /etc/mcp-bash-server/config.toml
 chmod 640 /etc/mcp-bash-server/config.toml
 
+# Security hardening auto-disable if mcp user has sudo
+SERVICE_FILE=/lib/systemd/system/mcp-bash-server.service
+if grep -rqs "^mcp.*ALL=.*NOPASSWD:.*ALL" /etc/sudoers /etc/sudoers.d/ 2>/dev/null; then
+    echo "Detected sudo privileges for mcp user — disabling systemd hardening..."
+    sed -i 's/^NoNewPrivileges=true$/# NoNewPrivileges=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectSystem=strict$/# ProtectSystem=strict/' "$SERVICE_FILE"
+    sed -i 's/^ProtectHome=true$/# ProtectHome=true/' "$SERVICE_FILE"
+    sed -i 's/^ReadWritePaths=\/$/# ReadWritePaths=/' "$SERVICE_FILE"
+    sed -i 's/^PrivateTmp=true$/# PrivateTmp=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelTunables=true$/# ProtectKernelTunables=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelModules=true$/# ProtectKernelModules=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectControlGroups=true$/# ProtectControlGroups=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictSUIDSGID=true$/# RestrictSUIDSGID=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictRealtime=true$/# RestrictRealtime=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictNamespaces=true$/# RestrictNamespaces=true/' "$SERVICE_FILE"
+    sed -i 's/^LockPersonality=true$/# LockPersonality=true/' "$SERVICE_FILE"
+    sed -i 's/^MemoryDenyWriteExecute=true$/# MemoryDenyWriteExecute=true/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallFilter=@system-service$/# SystemCallFilter=@system-service/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallErrorNumber=EPERM$/# SystemCallErrorNumber=EPERM/' "$SERVICE_FILE"
+fi
+
 # Reload systemd
 systemctl daemon-reload
 
@@ -25,3 +46,69 @@ echo "  3. Start the service: systemctl enable --now mcp-bash-server"
 echo ""
 echo "Check status: systemctl status mcp-bash-server"
 echo "View logs: journalctl -u mcp-bash-server -f"
+
+# Set permissions
+chown mcp:mcp /etc/mcp-bash-server/config.toml
+chmod 640 /etc/mcp-bash-server/config.toml
+
+# Security hardening auto-disable if mcp user has sudo
+SERVICE_FILE=/lib/systemd/system/mcp-bash-server.service
+if grep -rqs "^mcp.*ALL=.*NOPASSWD:.*ALL" /etc/sudoers /etc/sudoers.d/ 2>/dev/null; then
+    echo "Detected sudo privileges for mcp user — disabling systemd hardening..."
+    sed -i 's/^NoNewPrivileges=true$/# NoNewPrivileges=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectSystem=strict$/# ProtectSystem=strict/' "$SERVICE_FILE"
+    sed -i 's/^ProtectHome=true$/# ProtectHome=true/' "$SERVICE_FILE"
+    sed -i 's/^ReadWritePaths=\/$/# ReadWritePaths=/' "$SERVICE_FILE"
+    sed -i 's/^PrivateTmp=true$/# PrivateTmp=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelTunables=true$/# ProtectKernelTunables=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelModules=true$/# ProtectKernelModules=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectControlGroups=true$/# ProtectControlGroups=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictSUIDSGID=true$/# RestrictSUIDSGID=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictRealtime=true$/# RestrictRealtime=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictNamespaces=true$/# RestrictNamespaces=true/' "$SERVICE_FILE"
+    sed -i 's/^LockPersonality=true$/# LockPersonality=true/' "$SERVICE_FILE"
+    sed -i 's/^MemoryDenyWriteExecute=true$/# MemoryDenyWriteExecute=true/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallFilter=@system-service$/# SystemCallFilter=@system-service/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallErrorNumber=EPERM$/# SystemCallErrorNumber=EPERM/' "$SERVICE_FILE"
+fi
+
+# Reload systemd
+systemctl daemon-reload
+
+echo "mcp-bash-server installed successfully!"
+echo ""
+echo "Next steps:"
+echo "  1. Edit /etc/mcp-bash-server/config.toml to configure the server"
+echo "  2. Set API key: export MCP_API_KEY=your-secret-key"
+echo "  3. Start the service: systemctl enable --now mcp-bash-server"
+echo ""
+echo "Check status: systemctl status mcp-bash-server"
+echo "View logs: journalctl -u mcp-bash-server -f"
+
+# Set permissions
+chown mcp:mcp /etc/mcp-bash-server/config.toml
+chmod 640 /etc/mcp-bash-server/config.toml
+
+# Reload systemd
+systemctl daemon-reload
+# Security hardening auto-disable if mcp user has sudo
+SERVICE_FILE=/lib/systemd/system/mcp-bash-server.service
+if grep -rqs "^mcp.*ALL=.*NOPASSWD:.*ALL" /etc/sudoers /etc/sudoers.d/ 2>/dev/null; then
+    echo "Detected sudo privileges for mcp user — disabling systemd hardening..."
+    sed -i 's/^NoNewPrivileges=true$/# NoNewPrivileges=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectSystem=strict$/# ProtectSystem=strict/' "$SERVICE_FILE"
+    sed -i 's/^ProtectHome=true$/# ProtectHome=true/' "$SERVICE_FILE"
+    sed -i 's/^ReadWritePaths=\/$/# ReadWritePaths=/' "$SERVICE_FILE"
+    sed -i 's/^PrivateTmp=true$/# PrivateTmp=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelTunables=true$/# ProtectKernelTunables=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectKernelModules=true$/# ProtectKernelModules=true/' "$SERVICE_FILE"
+    sed -i 's/^ProtectControlGroups=true$/# ProtectControlGroups=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictSUIDSGID=true$/# RestrictSUIDSGID=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictRealtime=true$/# RestrictRealtime=true/' "$SERVICE_FILE"
+    sed -i 's/^RestrictNamespaces=true$/# RestrictNamespaces=true/' "$SERVICE_FILE"
+    sed -i 's/^LockPersonality=true$/# LockPersonality=true/' "$SERVICE_FILE"
+    sed -i 's/^MemoryDenyWriteExecute=true$/# MemoryDenyWriteExecute=true/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallFilter=@system-service$/# SystemCallFilter=@system-service/' "$SERVICE_FILE"
+    sed -i 's/^SystemCallErrorNumber=EPERM$/# SystemCallErrorNumber=EPERM/' "$SERVICE_FILE"
+    systemctl daemon-reload
+fi

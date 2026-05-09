@@ -16,6 +16,8 @@ import (
 	"mcp-bash-server/server"
 )
 
+var Version = "dev"
+
 func main() {
 	configPath := os.Getenv("MCP_CONFIG_PATH")
 	if configPath == "" {
@@ -116,20 +118,16 @@ func setupLogger(cfg *config.Config) *slog.Logger {
 	opts = &slog.HandlerOptions{Level: level}
 
 	var handler slog.Handler
-	switch strings.ToLower(cfg.Log.Format) {
-	case "text":
-		handler = slog.NewTextHandler(os.Stderr, opts)
-	default:
-		handler = slog.NewJSONHandler(os.Stderr, opts)
+	var out *os.File = os.Stderr
+	if cfg.Log.Output == "stdout" {
+		out = os.Stdout
 	}
 
-	if cfg.Log.Output == "stdout" {
-		switch strings.ToLower(cfg.Log.Format) {
-		case "text":
-			handler = slog.NewTextHandler(os.Stdout, opts)
-		default:
-			handler = slog.NewJSONHandler(os.Stdout, opts)
-		}
+	switch strings.ToLower(cfg.Log.Format) {
+	case "text":
+		handler = slog.NewTextHandler(out, opts)
+	default:
+		handler = slog.NewJSONHandler(out, opts)
 	}
 
 	return slog.New(handler)

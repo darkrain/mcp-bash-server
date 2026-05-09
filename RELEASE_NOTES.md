@@ -1,47 +1,29 @@
-# Release v1.0.4
+# Release v1.0.4-alpha.1
 
-## Security Hardening
+## Security & Reliability Improvements
 
 ### Critical Fixes
-- **Path Traversal Prevention**: `cwd` parameter now requires absolute paths and resolves symlinks
-- **DoS Prevention**: Added 10MB request body size limit and request read timeouts
+- **Integration tests fixed**: Added `Mcp-Session-Id` header and dual `Accept` (`application/json, text/event-stream`) for go-sdk v1.6.0 stateless mode. All tests now pass.
+- **Double exec.Cmd creation eliminated**: `server.go` now creates a single `exec.CommandContext` and wraps it with `context.WithTimeout` only once, preventing process leaks.
+- **Reliable process cleanup on timeout**: Added `Setpgid: true` and `syscall.Kill(-pid, SIGKILL)` when context expires, ensuring no zombie or orphan processes.
 
-### Security Features Added
-- **Rate Limiting**: 10 requests per second per IP (token bucket algorithm)
-- **Secret Redaction**: Commands with PASSWORD, SECRET, TOKEN, KEY are redacted in logs
-- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
-- **API Key Validation**: Warning if API key is shorter than 16 characters
-- **Safe Defaults**: Example config now starts with whitelist, not wildcard
+### Hardening
+- **Dynamic systemd hardening**: `postinst` detects if user `mcp` has `sudo NOPASSWD: ALL`. If yes — hardening directives are commented out (required for `sudo` to work). Otherwise hardening stays enabled by default.
+- **Config validation**: enforces valid port (1-65535), non-empty `base_url`, API key length >= 16, non-negative timeout and max_output_size.
+- **Log redaction**: commands containing `PASSWORD`, `SECRET`, `TOKEN`, `KEY` now have their values replaced with `***REDACTED***` before logging.
 
-### How to Update
-
-```bash
-# Download new version
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4/mcp-bash-server_1.0.4_amd64.deb
-
-# Install (auto-restarts service)
-sudo dpkg -i mcp-bash-server_1.0.4_amd64.deb
-```
-
-### Security Checklist
-
-- [x] Path traversal blocked
-- [x] Request size limited (10MB)
-- [x] Rate limiting active (10 req/sec)
-- [x] Secrets redacted in logs
-- [x] Security headers present
-- [x] Safe config defaults
-- [x] Security audit document (SECURITY_AUDIT.md)
-
-### Breaking Changes
-
-None. All changes are backward compatible.
+### Other Fixes
+- **IPv6 filtering**: link-local and multicast addresses excluded from sysinfo.
+- **MaxOutputSize**: now splits total limit proportionally between stdout/stderr instead of fixed 50/50.
+- **Makefile race**: `sed` no longer mutates original `packaging/deb/control`; a temp copy is used.
+- **go.mod**: Go version corrected to `1.23`.
+- **Version unification**: `main.Version` is set via `-X main.Version=` ldflag and passed to MCP server info.
 
 ## Artifacts
 
-| File | Size | Description |
-|------|------|-------------|
-| mcp-bash-server_amd64 | ~7.9MB | amd64 static binary |
-| mcp-bash-server_arm64 | ~7.3MB | arm64 static binary |
-| mcp-bash-server_1.0.4_amd64.deb | ~2.5MB | Debian package for amd64 |
-| mcp-bash-server_1.0.4_arm64.deb | ~2.1MB | Debian package for arm64 |
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.1_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.1_arm64.deb` | Debian package for arm64 |

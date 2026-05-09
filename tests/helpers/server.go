@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,7 +135,8 @@ func (ts *TestServer) SendJSON(t *testing.T, path string, payload any) *http.Res
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Session-Id", "test-session-0001")
 	if ts.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+ts.APIKey)
 	}
@@ -153,6 +155,7 @@ func (ts *TestServer) SendRaw(t *testing.T, method, path string, body []byte, he
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -182,8 +185,8 @@ func apiKeyMiddleware(next http.Handler, apiKey string) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
 			auth = r.Header.Get("X-API-Key")
-		} else if len(auth) > 7 && auth[:7] == "Bearer " {
-			auth = auth[7:]
+		} else if strings.HasPrefix(auth, "Bearer ") {
+			auth = strings.TrimPrefix(auth, "Bearer ")
 		}
 		if auth != apiKey {
 			w.Header().Set("Content-Type", "application/json")

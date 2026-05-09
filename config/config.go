@@ -91,7 +91,30 @@ func Load(path string) (*Config, error) {
 		cfg.Log.Level = level
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+func (c *Config) Validate() error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("invalid server port: %d", c.Server.Port)
+	}
+	if c.Server.BaseURL == "" {
+		return fmt.Errorf("server base_url cannot be empty")
+	}
+	if c.Server.APIKey != "" && len(c.Server.APIKey) < 16 {
+		return fmt.Errorf("api_key must be at least 16 characters long for security")
+	}
+	if c.Bash.Timeout < 0 {
+		return fmt.Errorf("bash timeout cannot be negative")
+	}
+	if c.Bash.MaxOutputSize < 0 {
+		return fmt.Errorf("bash max_output_size cannot be negative")
+	}
+	return nil
 }
 
 func (c *Config) ListenAddr() string {
