@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,6 +18,76 @@ import (
 	"mcp-bash-server/config"
 	"mcp-bash-server/server"
 )
+
+// Security Configuration
+const (
+	maxRequestBodySize = 10 * 1024 * 1024 // 10MB
+	maxHeaderBytes     = 1 * 1024 * 1024  // 1MB
+	rateLimitRequests  = 10               // per second per IP
+	rateLimitWindow    = time.Second
+)
+
+// RateLimiter implements token bucket algorithm per IP
+type RateLimiter struct {
+	mu     sync.RWMutex
+	limits map[string]*tokenBucket
+	window time.Duration
+	maxReq int
+}
+
+type tokenBucket struct {
+	tokens     int
+	lastRefill time.Time
+}
+
+func newRateLimiter(maxReq int, window time.Duration) *RateLimiter {
+	return &RateLimiter{
+		limits: make(map[string]*tokenBucket),
+		window: window,
+		maxReq: maxReq,
+	}
+}
+
+func (rl *RateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	bucket, exists := rl.limits[ip]
+	now := time.Now()
+
+	if !exists {
+		rl.limits[ip] = &tokenBucket{tokens: rl.maxReq - 1, lastRefill: now}
+		return true
+	}
+
+	// Refill tokens based on elapsed time
+	elapsed := now.Sub(bucket.lastRefill)
+	refillAmount := int(elapsed / rl.window)
+	if refillAmount > 0 {
+		bucket.tokens = min(rl.maxReq, bucket.tokens+refillAmount)
+		bucket.lastRefill = now
+	}
+
+	// Decrement and check
+	if bucket.tokens > 0 {
+		bucket.tokens--
+		return true
+	}
+	return false
+}
+
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	for ip, bucket := range rl.limits {
+		// Remove IPs that haven't had activity in 5 minutes
+		if now.Sub(bucket.lastRefill) > 5*time.Minute {
+			delete(rl.limits, ip)
+		}
+	}
+}
 
 func main() {
 	configPath := os.Getenv("MCP_CONFIG_PATH")
@@ -29,12 +102,19 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// Validate API key strength if set
+	if cfg.Server.APIKey != "" && len(cfg.Server.APIKey) < 16 {
+		logger := setupLogger(cfg)
+		logger.Warn("API key is weak (less than 16 characters). Consider using a stronger key.")
+	}
+
 	logger := setupLogger(cfg)
 	logger.Info("starting MCP bash server", "addr", cfg.ListenAddr())
 
 	mcpServer, sysInfo := server.NewMCPServer(cfg, logger)
 	logger.Info("server info", "hostname", sysInfo.Hostname, "ips", sysInfo.IPs, "user", sysInfo.User)
 
+	// Setup Streamable HTTP handler
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server {
 			return mcpServer
@@ -48,29 +128,50 @@ func main() {
 
 	mux := http.NewServeMux()
 	baseURL := strings.TrimSuffix(cfg.Server.BaseURL, "/")
-
 	mux.Handle(baseURL+"/", handler)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		headers := securityHeaders()
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// Middleware chain: security -> rate limit -> body size -> auth -> log
 	var wrappedHandler http.Handler = mux
+	wrappedHandler = securityHeadersMiddleware(wrappedHandler)
+	wrappedHandler = rateLimitMiddleware(wrappedHandler, newRateLimiter(rateLimitRequests, rateLimitWindow))
+	wrappedHandler = maxRequestBodySizeMiddleware(wrappedHandler, maxRequestBodySize)
+
 	if cfg.Server.APIKey != "" {
 		wrappedHandler = apiKeyMiddleware(wrappedHandler, cfg.Server.APIKey, logger)
 	}
-
 	wrappedHandler = loggingMiddleware(wrappedHandler, logger)
 
 	srv := &http.Server{
-		Addr:         cfg.ListenAddr(),
-		Handler:      wrappedHandler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           cfg.ListenAddr(),
+		Handler:        wrappedHandler,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   300 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: maxHeaderBytes,
 	}
+
+	// Start rate limiter cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if rl, ok := wrappedHandler.(*rateLimitMiddlewareWrapper); ok {
+				if rlm := rl.limiter; rlm != nil {
+					rlm.cleanup()
+				}
+			}
+		}
+	}()
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -112,8 +213,7 @@ func setupLogger(cfg *config.Config) *slog.Logger {
 		level = slog.LevelInfo
 	}
 
-	var opts *slog.HandlerOptions
-	opts = &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{Level: level}
 
 	var handler slog.Handler
 	switch strings.ToLower(cfg.Log.Format) {
@@ -153,10 +253,64 @@ func apiKeyMiddleware(next http.Handler, apiKey string, logger *slog.Logger) htt
 			logger.Warn("unauthorized request", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+type rateLimitMiddlewareWrapper struct {
+	next    http.Handler
+	limiter *RateLimiter
+}
+
+func rateLimitMiddleware(next http.Handler, limiter *RateLimiter) http.Handler {
+	return &rateLimitMiddlewareWrapper{next: next, limiter: limiter}
+}
+
+func (rlmw *rateLimitMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+
+	if !rlmw.limiter.allow(ip) {
+		headers := securityHeaders()
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"})
+		return
+	}
+
+	rlmw.next.ServeHTTP(w, r)
+}
+
+func maxRequestBodySizeMiddleware(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func securityHeaders() map[string]string {
+	return map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"X-XSS-Protection":       "1; mode=block",
+	}
+}
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers := securityHeaders()
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
