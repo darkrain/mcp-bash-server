@@ -2,14 +2,16 @@
 
 ## What's New
 
+- **Command Logging (Bash History)** — все выполненные команды теперь логируются с exit_code и duration. Аналог `bash history` для аудита.
 - **Wildcard Support for `allowed_commands`** — теперь можно разрешить все команды через `allowed_commands = ["*"]` или `["all"]`
 
-## Features (from v1.0.0)
+## Features
 
 - **Streamable HTTP Transport** — официальный MCP протокол через HTTP (modelcontextprotocol/go-sdk)
 - **SSH-like Server Identification** — каждый инструмент показывает hostname, IP, user, OS чтобы агент понимал с каким сервером работает
 - **Bash Command Execution** — выполнение команд с таймаутом, ограничением вывода и валидацией UTF-8
-- **Command Allowlist** — белый список разрешённых команд для безопасности
+- **Command Allowlist** — белый список разрешённых команд для безопасности с wildcard поддержкой
+- **Command Logging** — логирование всех команд (start/completed) для аудита
 - **API Key Authentication** — через заголовок `Authorization: Bearer ...` или `X-API-Key`
 - **Static Linking** — бинарник не зависит от версии libc, работает на любой Linux системе
 - **Multi-Architecture** — сборки для `amd64` и `arm64`
@@ -33,6 +35,10 @@ api_key = "your-secret-api-key"
 allowed_commands = ["*"]
 # Or specific commands:
 # allowed_commands = ["ls", "cat", "ps", "df", "git"]
+
+# Log all executed commands (bash history)
+log_commands = true
+
 timeout = 30
 max_output_size = 1048576
 

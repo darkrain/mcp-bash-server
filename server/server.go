@@ -107,6 +107,15 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 			input.Command = "/bin/bash"
 		}
 
+		cmdStr := input.Command
+		if len(args) > 0 {
+			cmdStr = input.Command + " " + strings.Join(args, " ")
+		}
+
+		if cfg.Bash.LogCommands {
+			logger.Info("command started", "command", cmdStr, "cwd", input.Cwd, "timeout", timeout)
+		}
+
 		cmd := exec.CommandContext(ctx, input.Command, args...)
 		if input.Cwd != "" {
 			cmd.Dir = input.Cwd
@@ -141,6 +150,10 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 			} else {
 				exitCode = -1
 			}
+		}
+
+		if cfg.Bash.LogCommands {
+			logger.Info("command completed", "command", cmdStr, "exit_code", exitCode, "duration_ms", duration)
 		}
 
 		stdout := truncateString(stdoutBuf.String(), cfg.Bash.MaxOutputSize/2)
