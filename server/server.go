@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +65,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if len(cfg.Bash.AllowedCommands) > 0 {
+			// Check for wildcard "*" or "all" to allow any command
 			allowsAll := false
 			for _, allowed := range cfg.Bash.AllowedCommands {
 				if allowed == "*" || allowed == "all" {
@@ -113,31 +113,12 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if cfg.Bash.LogCommands {
-			redactedCmd := redactSecrets(cmdStr)
-			logger.Info("command started", "command", redactedCmd, "cwd", input.Cwd, "timeout", timeout)
+			logger.Info("command started", "command", cmdStr, "cwd", input.Cwd, "timeout", timeout)
 		}
 
 		cmd := exec.CommandContext(ctx, input.Command, args...)
 		if input.Cwd != "" {
-			cleanDir := filepath.Clean(input.Cwd)
-			if !filepath.IsAbs(cleanDir) {
-				return &mcp.CallToolResult{
-					IsError: true,
-					Content: []mcp.Content{
-						&mcp.TextContent{Text: fmt.Sprintf("Error: working directory must be absolute path, got: %s", input.Cwd)},
-					},
-				}, BashOutput{}, nil
-			}
-			resolvedDir, err := filepath.EvalSymlinks(cleanDir)
-			if err != nil {
-				return &mcp.CallToolResult{
-					IsError: true,
-					Content: []mcp.Content{
-						&mcp.TextContent{Text: fmt.Sprintf("Error: invalid working directory: %v", err)},
-					},
-				}, BashOutput{}, nil
-			}
-			cmd.Dir = resolvedDir
+			cmd.Dir = input.Cwd
 		}
 
 		var stdoutBuf, stderrBuf bytes.Buffer
@@ -150,9 +131,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 			defer cancel()
 			cmd = exec.CommandContext(ctx, input.Command, args...)
 			if input.Cwd != "" {
-				cleanDir := filepath.Clean(input.Cwd)
-				resolvedDir, _ := filepath.EvalSymlinks(cleanDir)
-				cmd.Dir = resolvedDir
+				cmd.Dir = input.Cwd
 			}
 			cmd.Stdout = &stdoutBuf
 			cmd.Stderr = &stderrBuf
@@ -174,8 +153,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}
 
 		if cfg.Bash.LogCommands {
-			redactedCmd := redactSecrets(cmdStr)
-			logger.Info("command completed", "command", redactedCmd, "exit_code", exitCode, "duration_ms", duration)
+			logger.Info("command completed", "command", cmdStr, "exit_code", exitCode, "duration_ms", duration)
 		}
 
 		stdout := truncateString(stdoutBuf.String(), cfg.Bash.MaxOutputSize/2)
@@ -229,25 +207,6 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 	})
 
 	return server, si
-}
-
-func redactSecrets(cmd string) string {
-	redacted := cmd
-	// Redact common secret patterns like PASSWORD=xxx, SECRET_TOKEN=yyy
-	patterns := []string{"PASSWORD", "SECRET", "TOKEN", "KEY", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY"}
-	for _, pattern := range patterns {
-		upperCmd := strings.ToUpper(redacted)
-		if idx := strings.Index(upperCmd, pattern+"="); idx != -1 {
-			end := strings.IndexAny(redacted[idx:], " \t\n")
-			if end == -1 {
-				end = len(redacted)
-			} else {
-				end += idx
-			}
-			redacted = redacted[:idx+len(pattern)+1] + "***REDACTED***" + redacted[end:]
-		}
-	}
-	return redacted
 }
 
 func truncateString(s string, maxLen int) string {

@@ -1,51 +1,47 @@
-# Release v1.0.3
+# Release v1.0.4
 
-## What's New
+## Security Hardening
 
-- **Fixed sudo in systemd service** — убран `NoNewPrivileges=true` и другие hardening опции из systemd unit, которые блокировали sudo. Теперь команды с `sudo` работают корректно.
+### Critical Fixes
+- **Path Traversal Prevention**: `cwd` parameter now requires absolute paths and resolves symlinks
+- **DoS Prevention**: Added 10MB request body size limit and request read timeouts
 
-## Features (from v1.0.2)
+### Security Features Added
+- **Rate Limiting**: 10 requests per second per IP (token bucket algorithm)
+- **Secret Redaction**: Commands with PASSWORD, SECRET, TOKEN, KEY are redacted in logs
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- **API Key Validation**: Warning if API key is shorter than 16 characters
+- **Safe Defaults**: Example config now starts with whitelist, not wildcard
 
-- **Command Logging (Bash History)** — все выполненные команды логируются с exit_code и duration
-- **Wildcard Support** — `allowed_commands = ["*"]` или `["all"]` для разрешения любых команд
-- **Streamable HTTP Transport** — официальный MCP протокол через HTTP
-- **SSH-like Server Identification** — hostname, IP, user, OS в описании инструментов
-- **Bash Command Execution** — с таймаутом, ограничением вывода, UTF-8 валидацией
-- **API Key Authentication** — `Authorization: Bearer ...` или `X-API-Key`
-- **Static Linking** — работает на любой Linux без зависимостей от libc
-- **Multi-Architecture** — amd64 и arm64
-- **Debian Packages** — готовые `.deb` для установки
+### How to Update
 
-## Configuration
+```bash
+# Download new version
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4/mcp-bash-server_1.0.4_amd64.deb
 
-```toml
-[server]
-host = "0.0.0.0"
-port = 8080
-base_url = "/mcp"
-api_key = "your-secret-api-key"
-
-[bash]
-allowed_commands = ["*"]
-log_commands = true
-timeout = 30
-max_output_size = 1048576
-
-[log]
-level = "info"
-format = "json"
+# Install (auto-restarts service)
+sudo dpkg -i mcp-bash-server_1.0.4_amd64.deb
 ```
+
+### Security Checklist
+
+- [x] Path traversal blocked
+- [x] Request size limited (10MB)
+- [x] Rate limiting active (10 req/sec)
+- [x] Secrets redacted in logs
+- [x] Security headers present
+- [x] Safe config defaults
+- [x] Security audit document (SECURITY_AUDIT.md)
+
+### Breaking Changes
+
+None. All changes are backward compatible.
 
 ## Artifacts
 
 | File | Size | Description |
 |------|------|-------------|
-| `mcp-bash-server_amd64` | ~7.8MB | amd64 static binary |
-| `mcp-bash-server_arm64` | ~7.3MB | arm64 static binary |
-| `mcp-bash-server_1.0.3_amd64.deb` | ~2.5MB | Debian package for amd64 |
-| `mcp-bash-server_1.0.3_arm64.deb` | ~2.1MB | Debian package for arm64 |
-
-## Links
-
-- Repository: https://github.com/darkrain/mcp-bash-server
-- MCP Spec: https://modelcontextprotocol.io
+| mcp-bash-server_amd64 | ~7.9MB | amd64 static binary |
+| mcp-bash-server_arm64 | ~7.3MB | arm64 static binary |
+| mcp-bash-server_1.0.4_amd64.deb | ~2.5MB | Debian package for amd64 |
+| mcp-bash-server_1.0.4_arm64.deb | ~2.1MB | Debian package for arm64 |
