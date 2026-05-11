@@ -34,8 +34,11 @@ func main() {
 	logger := setupLogger(cfg)
 	logger.Info("starting MCP bash server", "addr", cfg.ListenAddr())
 
-	mcpServer, sysInfo, registry := server.NewMCPServer(cfg, logger, Version)
-	logger.Info("server info", "hostname", sysInfo.Hostname, "ips", sysInfo.IPs, "user", sysInfo.User)
+	mcpServer, sysInfo, registry, err := server.NewMCPServer(cfg, logger, Version)
+	if err != nil {
+		log.Fatalf("Failed to create MCP server: %v", err)
+	}
+	logger.Info("server info", "hostname", sysInfo.Hostname, "ips", sysInfo.IPs, "user", sysInfo.User, "process_dir", cfg.Bash.ProcessDir)
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server {

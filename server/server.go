@@ -69,14 +69,17 @@ type BashOutput struct {
 	Duration int64  `json:"duration_ms" jsonschema:"execution duration in milliseconds"`
 }
 
-func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp.Server, *sysinfo.SystemInfo, *ProcessRegistry) {
+func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp.Server, *sysinfo.SystemInfo, *ProcessRegistry, error) {
 	si := sysinfo.GetSystemInfo()
 
 	processTTL := time.Duration(cfg.Bash.ProcessTTL) * time.Minute
 	if processTTL <= 0 {
 		processTTL = 60 * time.Minute
 	}
-	registry := NewProcessRegistry(processTTL)
+	registry, err := NewProcessRegistry(cfg.Bash.ProcessDir, processTTL, logger)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to initialize process registry: %w", err)
+	}
 
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-bash-server",
@@ -300,12 +303,26 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 			}, nil, nil
 		}
 
+		if p.Status == StatusRunning && !isPIDAlive(p.PID) {
+			now := time.Now()
+			registry.Update(p.ID, func(proc *Process) {
+				proc.Status = StatusFailed
+				proc.ExitCode = -1
+				proc.EndedAt = &now
+				proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+			})
+			p, _ = registry.Get(p.ID)
+		}
+
 		elapsed := time.Since(p.StartedAt).Milliseconds()
 		result := map[string]any{
 			"process_id": p.ID,
 			"status":     string(p.Status),
 			"command":    p.Command,
 			"elapsed_ms": elapsed,
+		}
+		if p.PID > 0 {
+			result["pid"] = p.PID
 		}
 		if p.ExitCode != 0 || p.Status != StatusRunning {
 			result["exit_code"] = p.ExitCode
@@ -317,7 +334,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		var text string
 		switch p.Status {
 		case StatusRunning:
-			text = fmt.Sprintf("Process %s is still running (%d ms elapsed)", p.ID, elapsed)
+			text = fmt.Sprintf("Process %s is still running (PID %d, %d ms elapsed)", p.ID, p.PID, elapsed)
 		case StatusCompleted:
 			text = fmt.Sprintf("Process %s completed with exit code %d in %d ms", p.ID, p.ExitCode, p.Duration)
 		case StatusFailed:
@@ -353,26 +370,41 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}
 
 		if p.Status == StatusRunning {
+			if !isPIDAlive(p.PID) {
+				now := time.Now()
+				registry.Update(p.ID, func(proc *Process) {
+					proc.Status = StatusFailed
+					proc.ExitCode = -1
+					proc.EndedAt = &now
+					proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+				})
+				p, _ = registry.Get(p.ID)
+			} else {
+				return &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{
+						&mcp.TextContent{Text: fmt.Sprintf("Process %s is still running. Use process_status to check when it completes.", p.ID)},
+					},
+				}, nil, nil
+			}
+		}
+
+		output, err := registry.ReadOutput(p, cfg.Bash.MaxOutputSize)
+		if err != nil {
 			return &mcp.CallToolResult{
 				IsError: true,
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("Process %s is still running. Use process_status to check when it completes.", p.ID)},
+					&mcp.TextContent{Text: fmt.Sprintf("Error reading output: %v", err)},
 				},
 			}, nil, nil
 		}
 
 		var content []mcp.Content
-		if p.Stdout != "" {
+		if output != "" {
 			content = append(content, &mcp.TextContent{
-				Text: fmt.Sprintf("=== STDOUT ===\n%s", p.Stdout),
+				Text: output,
 			})
-		}
-		if p.Stderr != "" {
-			content = append(content, &mcp.TextContent{
-				Text: fmt.Sprintf("=== STDERR ===\n%s", p.Stderr),
-			})
-		}
-		if len(content) == 0 {
+		} else {
 			content = append(content, &mcp.TextContent{
 				Text: fmt.Sprintf("Process completed with exit code %d (no output)", p.ExitCode),
 			})
@@ -383,8 +415,6 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 			}, map[string]any{
 				"process_id": p.ID,
 				"exit_code":  p.ExitCode,
-				"stdout":     p.Stdout,
-				"stderr":     p.Stderr,
 			}, nil
 	})
 
@@ -416,15 +446,21 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 			}, nil, nil
 		}
 
-		registry.Update(input.ProcessID, func(p *Process) {
-			if p.cancel != nil {
-				p.cancel()
-			}
+		if isPIDAlive(p.PID) {
+			_ = syscall.Kill(-p.PID, syscall.SIGKILL)
+		}
+
+		now := time.Now()
+		registry.Update(input.ProcessID, func(proc *Process) {
+			proc.Status = StatusKilled
+			proc.ExitCode = -1
+			proc.EndedAt = &now
+			proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
 		})
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Kill signal sent to process %s", input.ProcessID)},
+				&mcp.TextContent{Text: fmt.Sprintf("Kill signal sent to process %s (PID %d)", input.ProcessID, p.PID)},
 			},
 		}, nil, nil
 	})
@@ -449,10 +485,10 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 
 		var lines []string
 		for _, p := range processes {
-			elapsed := time.Since(p.StartedAt).Milliseconds()
 			line := fmt.Sprintf("%s | %s | %s", p.ID, p.Status, p.Command)
 			if p.Status == StatusRunning {
-				line += fmt.Sprintf(" (%dms elapsed)", elapsed)
+				elapsed := time.Since(p.StartedAt).Milliseconds()
+				line += fmt.Sprintf(" (PID %d, %dms elapsed)", p.PID, elapsed)
 			} else if p.Duration > 0 {
 				line += fmt.Sprintf(" (exit %d, %dms)", p.ExitCode, p.Duration)
 			}
@@ -466,7 +502,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}, nil, nil
 	})
 
-	return mcpServer, si, registry
+	return mcpServer, si, registry, nil
 }
 
 func isCommandAllowed(command string, cfg *config.Config) bool {
@@ -488,13 +524,21 @@ func isCommandAllowed(command string, cfg *config.Config) bool {
 }
 
 func runAsyncProcess(p *Process, registry *ProcessRegistry, cfg *config.Config, logger *slog.Logger) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	registry.Update(p.ID, func(proc *Process) {
-		proc.cancel = cancel
-	})
-
-	var stdoutBuf, stderrBuf bytes.Buffer
+	outFile, err := registry.CreateOutputFile(p.ID)
+	if err != nil {
+		now := time.Now()
+		registry.Update(p.ID, func(proc *Process) {
+			proc.Status = StatusFailed
+			proc.ExitCode = -1
+			proc.EndedAt = &now
+			proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+		})
+		if cfg.Bash.LogCommands {
+			logger.Error("async command failed to create output file", "process_id", p.ID, "error", err)
+		}
+		return
+	}
+	defer outFile.Close()
 
 	args := []string{"-c", p.Command}
 	cmdStr := "/bin/bash" + " " + strings.Join(args, " ")
@@ -503,70 +547,66 @@ func runAsyncProcess(p *Process, registry *ProcessRegistry, cfg *config.Config, 
 		logger.Info("async command executing", "process_id", p.ID, "command", redactCommand(cmdStr))
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/bash", args...)
+	cmd := exec.Command("/bin/bash", args...)
 	if p.Cwd != "" {
 		cmd.Dir = p.Cwd
 	}
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
+	cmd.Stdout = outFile
+	cmd.Stderr = outFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var err error
-	if startErr := cmd.Start(); startErr == nil {
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
-		select {
-		case err = <-done:
-		case <-ctx.Done():
-			if cmd.Process != nil {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
-			<-done
-			err = ctx.Err()
+	err = cmd.Start()
+	if err != nil {
+		now := time.Now()
+		registry.Update(p.ID, func(proc *Process) {
+			proc.Status = StatusFailed
+			proc.ExitCode = -1
+			proc.EndedAt = &now
+			proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+		})
+		if cfg.Bash.LogCommands {
+			logger.Error("async command failed to start", "process_id", p.ID, "error", err)
 		}
-	} else {
-		err = startErr
+		return
 	}
+
+	registry.Update(p.ID, func(proc *Process) {
+		proc.PID = cmd.Process.Pid
+	})
+
+	waitErr := cmd.Wait()
 
 	now := time.Now()
 	exitCode := 0
 	status := StatusCompleted
 
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-			if status2, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-				exitCode = status2.ExitStatus()
+			if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+				if ws.Signaled() {
+					exitCode = -1
+					status = StatusKilled
+				} else {
+					exitCode = ws.ExitStatus()
+					status = StatusFailed
+				}
 			}
-		} else if ctx.Err() != nil {
-			exitCode = -1
-			status = StatusKilled
 		} else {
 			exitCode = -1
 			status = StatusFailed
 		}
 	}
 
-	stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
-	if !utf8.ValidString(stdout) {
-		stdout = "[binary output truncated]"
-	}
-	if !utf8.ValidString(stderr) {
-		stderr = "[binary output truncated]"
-	}
-
 	registry.Update(p.ID, func(proc *Process) {
 		proc.Status = status
 		proc.ExitCode = exitCode
-		proc.Stdout = stdout
-		proc.Stderr = stderr
 		proc.EndedAt = &now
 		proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
-		proc.cancel = nil
 	})
 
 	if cfg.Bash.LogCommands {
-		logger.Info("async command completed", "process_id", p.ID, "status", string(status), "exit_code", exitCode, "duration_ms", now.Sub(p.StartedAt).Milliseconds())
+		logger.Info("async command completed", "process_id", p.ID, "pid", cmd.Process.Pid, "status", string(status), "exit_code", exitCode, "duration_ms", now.Sub(p.StartedAt).Milliseconds())
 	}
 }
 

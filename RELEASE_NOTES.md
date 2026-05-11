@@ -1,3 +1,60 @@
+# Release v1.0.4-alpha.3
+
+## Process Persistence
+
+Async processes now survive service restarts and upgrades. Architecture redesigned from in-memory to persistent storage:
+
+### bbolt Database
+- Process metadata (ID, command, PID, status, exit code, timestamps) stored in bbolt embedded database
+- DB file: `{process_dir}/processes.db`
+- State persists across restarts — no data loss on upgrade
+
+### File-based Output
+- Process stdout/stderr written directly to `{process_dir}/output/{process_id}.log`
+- Streamed to disk via `cmd.Stdout = *os.File` — no memory buffering
+- Output available after restart, even for long-running processes
+
+### Process Survival
+- Processes launched with `Setpgid: true` — they get their own process group
+- When the MCP server stops, processes keep running independently
+- On restart, `process_status` checks `/proc/{pid}` to detect if process is still alive
+- Stale running processes are automatically marked as `failed`
+
+### Recovery on Startup
+- Server scans bbolt DB on startup
+- Running processes with dead PIDs are marked as `failed`
+- All other state is restored from DB
+
+## DEB Package Improvements
+
+### Config Preservation
+- `config.toml` is **never** overwritten during package upgrade
+- `config.example.toml` is always updated to latest version
+- On upgrade, a diff between user config and example is shown, highlighting new/changed options
+- User can review changes: `diff /etc/mcp-bash-server/config.toml /etc/mcp-bash-server/config.example.toml`
+
+### Process Data Directory
+- `/var/lib/mcp-bash-server/output/` created automatically with correct ownership
+- DEB postinst sets `mcp:mcp` ownership recursively
+
+## New Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `process_dir` | `/var/lib/mcp-bash-server` | Directory for bbolt DB and output files |
+| `MCP_PROCESS_DIR` | — | Environment variable override |
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.3_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.3_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.2
 
 ## Async Process Execution

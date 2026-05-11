@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,10 +27,14 @@ type TestServer struct {
 	APIKey     string
 	BaseURL    string
 	httpServer *http.Server
+	registry   *mcpserver.ProcessRegistry
+	tempDir    string
 }
 
 func NewTestServer(t *testing.T, cfg *config.Config) *TestServer {
 	t.Helper()
+
+	tempDir := t.TempDir()
 
 	if cfg == nil {
 		cfg = config.DefaultConfig()
@@ -36,9 +42,13 @@ func NewTestServer(t *testing.T, cfg *config.Config) *TestServer {
 
 	cfg.Server.Host = "127.0.0.1"
 	cfg.Server.Port = 0
+	cfg.Bash.ProcessDir = filepath.Join(tempDir, "proc")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	mcpServer, _, _ := mcpserver.NewMCPServer(cfg, logger, "test")
+	mcpServer, _, registry, err := mcpserver.NewMCPServer(cfg, logger, "test")
+	if err != nil {
+		t.Fatalf("failed to create MCP server: %v", err)
+	}
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpServer },
@@ -103,9 +113,12 @@ func NewTestServer(t *testing.T, cfg *config.Config) *TestServer {
 		APIKey:     cfg.Server.APIKey,
 		BaseURL:    baseURL,
 		httpServer: httpServer,
+		registry:   registry,
+		tempDir:    tempDir,
 	}
 
 	t.Cleanup(func() {
+		registry.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		ts.httpServer.Shutdown(ctx)
@@ -196,4 +209,8 @@ func apiKeyMiddleware(next http.Handler, apiKey string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func init() {
+	_ = os.Stderr
 }

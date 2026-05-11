@@ -27,8 +27,8 @@ MCP сервер для выполнения bash команд на сервер
 
 ```bash
 # Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.2/mcp-bash-server_1.0.4-alpha.2_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.2_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.3/mcp-bash-server_1.0.4-alpha.3_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.3_amd64.deb
 sudo systemctl enable --now mcp-bash-server
 ```
 
@@ -72,6 +72,10 @@ log_commands = true
 # После истечения TTL процесс удаляется из реестра
 # По умолчанию: 60
 process_ttl = 60
+
+# Директория для хранения данных async-процессов (bbolt DB + логи вывода)
+# По умолчанию: /var/lib/mcp-bash-server
+# process_dir = "/var/lib/mcp-bash-server"
 
 [log]
 level = "info"
@@ -117,6 +121,7 @@ journalctl -u mcp-bash-server -f
 | `MCP_BASE_URL` | Базовый URL |
 | `MCP_BASH_TIMEOUT` | Таймаут команд (сек) |
 | `MCP_PROCESS_TTL` | TTL процессов async (мин) |
+| `MCP_PROCESS_DIR` | Директория данных процессов |
 | `MCP_LOG_LEVEL` | Уровень логирования (debug/info/warn/error) |
 
 ## Идентификация сервера
@@ -281,13 +286,15 @@ curl -X POST http://localhost:8080/mcp/ \
 3. **Timeout** — лимит времени выполнения (по умолчанию 30 сек)
 4. **Max Output** — ограничение размера вывода (по умолчанию 1MB)
 5. **systemd hardening** — seccomp, namespace isolation, readonly filesystem
+6. **Process persistence** — async-процессы выживают при обновлении сервиса (Setpgid + bbolt + файлы вывода)
+7. **Config preservation** — при обновлении DEB пакета пользовательский config.toml не перезаписывается
 
 ## Архитектуры
 
 | Архитектура | Бинарник | DEB пакет |
 |-------------|----------|-----------|
-| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.2_amd64.deb` |
-| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.2_arm64.deb` |
+| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.3_amd64.deb` |
+| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.3_arm64.deb` |
 
 Бинарники статически слинкованы (CGO_ENABLED=0) и работают без зависимостей от libc.
 

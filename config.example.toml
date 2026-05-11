@@ -21,6 +21,10 @@ log_commands = true
 # По умолчанию: 60
 process_ttl = 60
 
+# Директория для хранения данных async-процессов (bbolt DB + логи вывода)
+# По умолчанию: /var/lib/mcp-bash-server
+# process_dir = "/var/lib/mcp-bash-server"
+
 [log]
 level = "info"
 format = "json"

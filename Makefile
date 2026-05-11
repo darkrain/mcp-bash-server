@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.2
+VERSION := 1.0.4-alpha.3
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 
@@ -97,14 +97,15 @@ define build-deb
 	@mkdir -p $(BUILD_DIR)/deb-$1/DEBIAN
 	@mkdir -p $(BUILD_DIR)/deb-$1/usr/bin
 	@mkdir -p $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)
+	@mkdir -p $(BUILD_DIR)/deb-$1/var/lib/$(BINARY_NAME)/output
 	@mkdir -p $(BUILD_DIR)/deb-$1/lib/systemd/system
 	@mkdir -p $(BUILD_DIR)/deb-$1/usr/share/doc/$(BINARY_NAME)
 
 	@cp $2 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
 	@chmod 755 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
 
-	@cp config.example.toml $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.toml
-	@chmod 644 $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.toml
+	@cp config.example.toml $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.example.toml
+	@chmod 644 $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.example.toml
 
 	@cp packaging/systemd/$(BINARY_NAME).service $(BUILD_DIR)/deb-$1/lib/systemd/system/
 	@chmod 644 $(BUILD_DIR)/deb-$1/lib/systemd/system/$(BINARY_NAME).service

@@ -26,6 +26,7 @@ type BashConfig struct {
 	MaxOutputSize   int      `toml:"max_output_size"`
 	LogCommands     bool     `toml:"log_commands"`
 	ProcessTTL      int      `toml:"process_ttl"`
+	ProcessDir      string   `toml:"process_dir"`
 }
 
 type LogConfig struct {
@@ -48,6 +49,7 @@ func DefaultConfig() *Config {
 			MaxOutputSize:   1048576,
 			LogCommands:     true,
 			ProcessTTL:      60,
+			ProcessDir:      "/var/lib/mcp-bash-server",
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -94,6 +96,9 @@ func Load(path string) (*Config, error) {
 		if _, err := fmt.Sscanf(processTTL, "%d", &t); err == nil {
 			cfg.Bash.ProcessTTL = t
 		}
+	}
+	if processDir := os.Getenv("MCP_PROCESS_DIR"); processDir != "" {
+		cfg.Bash.ProcessDir = processDir
 	}
 	if level := os.Getenv("MCP_LOG_LEVEL"); level != "" {
 		cfg.Log.Level = level
