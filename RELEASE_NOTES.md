@@ -1,3 +1,38 @@
+# Release v1.0.4-alpha.4
+
+## Timeout-to-Async
+
+When a synchronous `bash` command hits its timeout, the process is **no longer killed**. Instead, it is automatically transferred to the async process registry and continues running in the background. The agent receives a `process_id` and can check progress with `process_status`, retrieve results with `process_output`, or terminate with `process_kill`.
+
+Key behaviors:
+- The process is registered in the bbolt-backed `ProcessRegistry` with its real PID
+- Accumulated stdout/stderr up to the timeout point is flushed to the process output file
+- A goroutine waits for the process to finish and updates status/exit code in the registry
+- The response is returned **without** `IsError` — so the agent treats it as an in-progress result, not a failure
+- The message explicitly states the command has NOT failed and is still executing in the background
+
+This solves the common scenario where an agent launches a heavy command synchronously, it times out, and the agent interprets the SIGKILL as a failure and retries — instead of just waiting for the result.
+
+## Process Reaping on Restart
+
+Previously, alive processes left in `running` status after a server restart would stay stuck forever — the `recover()` function only handled dead PIDs.
+
+Now `recover()` also **reaps** alive processes:
+- If a process PID is still alive, a goroutine is spawned that calls `os.FindProcess(pid).Wait()`
+- When the process finishes, status/exit code/duration are updated in the registry
+- No process stays stuck in `running` indefinitely after a restart
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.4_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.4_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.3
 
 ## Self-Protection

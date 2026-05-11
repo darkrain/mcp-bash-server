@@ -27,8 +27,8 @@ MCP сервер для выполнения bash команд на сервер
 
 ```bash
 # Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.3/mcp-bash-server_1.0.4-alpha.3_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.3_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.4/mcp-bash-server_1.0.4-alpha.4_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.4_amd64.deb
 sudo systemctl enable --now mcp-bash-server
 ```
 
@@ -36,10 +36,9 @@ sudo systemctl enable --now mcp-bash-server
 
 ```bash
 # Скачать новую версию
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.3/mcp-bash-server_1.0.3_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.4/mcp-bash-server_1.0.4-alpha.4_amd64.deb
 
-# Установить (перезапускает сервис автоматически)
-sudo dpkg -i mcp-bash-server_1.0.3_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.4_amd64.deb
 
 # Или если нужно перезапустить вручную
 sudo systemctl restart mcp-bash-server
@@ -181,6 +180,8 @@ sudo -u mcp bash -c "sudo whoami"
 ### bash
 Синхронное выполнение команды с ожиданием результата. Подходит для быстрых команд.
 
+Если команда не успевает выполниться за указанный таймаут, она **не убивается** — вместо этого процесс переводится в фоновое выполнение (аналог `bash_async`). Агент получает `process_id` и может проверить результат через `process_status` / `process_output`.
+
 Параметры:
 - `command` — команда для выполнения
 - `args` — аргументы (опционально)
@@ -288,13 +289,14 @@ curl -X POST http://localhost:8080/mcp/ \
 5. **systemd hardening** — seccomp, namespace isolation, readonly filesystem
 6. **Process persistence** — async-процессы выживают при обновлении сервиса (Setpgid + bbolt + файлы вывода)
 7. **Config preservation** — при обновлении DEB пакета пользовательский config.toml не перезаписывается
+8. **Timeout-to-async** — при таймауте синхронной команды процесс не убивается, а переводится в фоновое выполнение; агент получает process_id для проверки результата
 
 ## Архитектуры
 
 | Архитектура | Бинарник | DEB пакет |
 |-------------|----------|-----------|
-| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.3_amd64.deb` |
-| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.3_arm64.deb` |
+| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.4_amd64.deb` |
+| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.4_arm64.deb` |
 
 Бинарники статически слинкованы (CGO_ENABLED=0) и работают без зависимостей от libc.
 

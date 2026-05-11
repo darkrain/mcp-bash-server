@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -87,6 +88,7 @@ func NewProcessRegistry(dir string, ttl time.Duration, logger *slog.Logger) (*Pr
 
 func (r *ProcessRegistry) recover() {
 	var toUpdate []Process
+	var alive []*Process
 
 	r.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucketName)
@@ -105,6 +107,9 @@ func (r *ProcessRegistry) recover() {
 				now := time.Now()
 				p.EndedAt = &now
 				toUpdate = append(toUpdate, p)
+			} else {
+				pCopy := p
+				alive = append(alive, &pCopy)
 			}
 		}
 		return nil
@@ -116,6 +121,60 @@ func (r *ProcessRegistry) recover() {
 			r.logger.Info("recovered stale process", "process_id", p.ID, "pid", p.PID, "status", string(p.Status))
 		}
 	}
+
+	for _, p := range alive {
+		r.reapProcess(p)
+		if r.logger != nil {
+			r.logger.Info("reaping alive process", "process_id", p.ID, "pid", p.PID)
+		}
+	}
+}
+
+func (r *ProcessRegistry) reapProcess(p *Process) {
+	pid := p.PID
+	go func() {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			now := time.Now()
+			r.Update(p.ID, func(proc *Process) {
+				proc.Status = StatusFailed
+				proc.ExitCode = -1
+				proc.EndedAt = &now
+				proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+			})
+			return
+		}
+		state, waitErr := proc.Wait()
+		now := time.Now()
+		exitCode := 0
+		status := StatusCompleted
+		if waitErr != nil {
+			exitCode = -1
+			status = StatusFailed
+			if exitErr, ok := waitErr.(*exec.ExitError); ok {
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+					if ws.Signaled() {
+						status = StatusKilled
+					} else {
+						exitCode = ws.ExitStatus()
+					}
+				}
+			}
+		} else if ws, ok := state.Sys().(syscall.WaitStatus); ok {
+			if ws.Signaled() {
+				exitCode = -1
+				status = StatusKilled
+			} else {
+				exitCode = ws.ExitStatus()
+			}
+		}
+		r.Update(p.ID, func(proc *Process) {
+			proc.Status = status
+			proc.ExitCode = exitCode
+			proc.EndedAt = &now
+			proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+		})
+	}()
 }
 
 func (r *ProcessRegistry) NewProcess(command, cwd string) *Process {

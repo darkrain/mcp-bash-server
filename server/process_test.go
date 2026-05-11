@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -157,7 +158,7 @@ func TestProcessRegistryCleanup(t *testing.T) {
 	}
 }
 
-func TestProcessRegistryRecovery(t *testing.T) {
+func TestProcessRegistryRecoveryDeadPID(t *testing.T) {
 	dir := t.TempDir()
 
 	r1, err := NewProcessRegistry(dir, 60*time.Minute, nil)
@@ -186,6 +187,50 @@ func TestProcessRegistryRecovery(t *testing.T) {
 	}
 	if got.PID != 99999999 {
 		t.Fatalf("expected PID 99999999, got %d", got.PID)
+	}
+}
+
+func TestProcessRegistryRecoveryAliveProcess(t *testing.T) {
+	dir := t.TempDir()
+
+	r1, err := NewProcessRegistry(dir, 60*time.Minute, nil)
+	if err != nil {
+		t.Fatalf("failed to create registry: %v", err)
+	}
+
+	cmd := exec.Command("sleep", "2")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start sleep process: %v", err)
+	}
+
+	p := r1.NewProcess("sleep 2", "")
+	r1.Update(p.ID, func(proc *Process) {
+		proc.PID = cmd.Process.Pid
+	})
+	r1.Stop()
+
+	r2, err := NewProcessRegistry(dir, 60*time.Minute, nil)
+	if err != nil {
+		t.Fatalf("failed to create registry on recovery: %v", err)
+	}
+	defer r2.Stop()
+
+	got, ok := r2.Get(p.ID)
+	if !ok {
+		t.Fatal("expected to find process after recovery")
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("expected running (alive PID), got %s", got.Status)
+	}
+
+	time.Sleep(3 * time.Second)
+
+	got, ok = r2.Get(p.ID)
+	if !ok {
+		t.Fatal("expected to find process after sleep finished")
+	}
+	if got.Status != StatusCompleted {
+		t.Fatalf("expected completed after sleep, got %s", got.Status)
 	}
 }
 

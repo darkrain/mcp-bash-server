@@ -25,6 +25,11 @@ type BashInput struct {
 	Cwd     string   `json:"cwd,omitempty" jsonschema:"optional working directory"`
 }
 
+type BashTimeoutResult struct {
+	ProcessID string `json:"process_id"`
+	Message   string `json:"message"`
+}
+
 type BashAsyncInput struct {
 	Command string `json:"command" jsonschema:"the bash command to execute asynchronously"`
 	Cwd     string `json:"cwd,omitempty" jsonschema:"optional working directory"`
@@ -152,13 +157,15 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 
 		var stdoutBuf, stderrBuf bytes.Buffer
 
+		timeoutCh := make(chan struct{})
 		if timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-			defer cancel()
+			go func() {
+				time.Sleep(time.Duration(timeout) * time.Second)
+				close(timeoutCh)
+			}()
 		}
 
-		cmd := exec.CommandContext(ctx, input.Command, args...)
+		cmd := exec.Command(input.Command, args...)
 		if input.Cwd != "" {
 			cmd.Dir = input.Cwd
 		}
@@ -169,17 +176,91 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}
 
 		var err error
+		var asyncProcess *Process
 		if startErr := cmd.Start(); startErr == nil {
 			done := make(chan error, 1)
 			go func() { done <- cmd.Wait() }()
 			select {
 			case err = <-done:
-			case <-ctx.Done():
-				if cmd.Process != nil {
-					_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			case <-timeoutCh:
+				asyncProcess = registry.NewProcess(cmdStr, input.Cwd)
+
+				outFile, fileErr := registry.CreateOutputFile(asyncProcess.ID)
+				if fileErr == nil {
+					outFile.Write(stdoutBuf.Bytes())
+					outFile.Write(stderrBuf.Bytes())
+					outFile.Close()
 				}
-				<-done
-				err = ctx.Err()
+
+				registry.Update(asyncProcess.ID, func(proc *Process) {
+					proc.PID = cmd.Process.Pid
+				})
+
+				go func() {
+					waitErr := <-done
+					now := time.Now()
+					exitCode := 0
+					status := StatusCompleted
+					if waitErr != nil {
+						if exitErr, ok := waitErr.(*exec.ExitError); ok {
+							if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+								if ws.Signaled() {
+									exitCode = -1
+									status = StatusKilled
+								} else {
+									exitCode = ws.ExitStatus()
+									status = StatusFailed
+								}
+							} else {
+								exitCode = exitErr.ExitCode()
+								status = StatusFailed
+							}
+						} else {
+							exitCode = -1
+							status = StatusFailed
+						}
+					}
+					registry.Update(asyncProcess.ID, func(proc *Process) {
+						proc.Status = status
+						proc.ExitCode = exitCode
+						proc.EndedAt = &now
+						proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+					})
+					if cfg.Bash.LogCommands {
+						logger.Info("async timeout process completed", "process_id", asyncProcess.ID, "pid", cmd.Process.Pid, "status", string(status), "exit_code", exitCode)
+					}
+				}()
+
+				if cfg.Bash.LogCommands {
+					logger.Info("command timed out, transferred to async", "command", redactCommand(cmdStr), "process_id", asyncProcess.ID, "timeout", timeout)
+				}
+
+				stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
+				if !utf8.ValidString(stdout) {
+					stdout = "[binary output truncated]"
+				}
+				if !utf8.ValidString(stderr) {
+					stderr = "[binary output truncated]"
+				}
+
+				msg := fmt.Sprintf("Command is still running after %d seconds (timeout reached). It has been moved to background execution.\nProcess ID: %s\n\nThe command has NOT failed — it is still executing in the background.\nUse process_status to check progress, process_output to get results when it finishes, process_kill to terminate it.", timeout, asyncProcess.ID)
+				if stdout != "" {
+					msg += fmt.Sprintf("\n\n=== STDOUT (so far) ===\n%s", stdout)
+				}
+				if stderr != "" {
+					msg += fmt.Sprintf("\n\n=== STDERR (so far) ===\n%s", stderr)
+				}
+
+				return &mcp.CallToolResult{
+						Content: []mcp.Content{
+							&mcp.TextContent{Text: msg},
+						},
+					}, BashOutput{
+						Stdout:   stdout,
+						Stderr:   stderr,
+						ExitCode: -1,
+						Duration: time.Since(start).Milliseconds(),
+					}, nil
 			}
 		} else {
 			err = startErr

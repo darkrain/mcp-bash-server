@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -357,4 +358,80 @@ func TestBashAsyncAllowedCommands(t *testing.T) {
 		t.Errorf("expected rejection, got: %s", string(raw))
 	}
 	_ = resp
+}
+
+func TestBashTimeoutTransfersToAsync(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Bash.Timeout = 1
+	ts := helpers.NewTestServer(t, cfg)
+	initMCP(t, ts)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "bash",
+			"arguments": map[string]any{
+				"command": "sleep 30 && echo done",
+			},
+		},
+	})
+	req, err := http.NewRequest("POST", ts.HTTPAddr+ts.BaseURL+"/", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Session-Id", "test-session-timeout-0001")
+	if ts.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+ts.APIKey)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	respBody := helpers.ReadBody(t, resp)
+
+	if !strings.Contains(respBody, "still running") {
+		t.Fatalf("expected timeout message, got: %s", respBody)
+	}
+
+	pid := ""
+	idx := strings.Index(respBody, "Process ID: ")
+	if idx >= 0 {
+		remainder := respBody[idx+12:]
+		end := strings.IndexAny(remainder, " \n\\\"")
+		if end < 0 {
+			end = len(remainder)
+		}
+		pid = strings.TrimSpace(remainder[:end])
+	}
+	if pid == "" {
+		t.Fatalf("could not extract process ID from response: %s", respBody)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	statusResp := ts.MCPRequest(t, "tools/call", map[string]any{
+		"name": "process_status",
+		"arguments": map[string]any{
+			"process_id": pid,
+		},
+	})
+	statusBody := helpers.ReadBody(t, statusResp)
+	if !strings.Contains(statusBody, "running") {
+		t.Errorf("expected process to still be running, got: %s", statusBody)
+	}
+
+	killResp := ts.MCPRequest(t, "tools/call", map[string]any{
+		"name": "process_kill",
+		"arguments": map[string]any{
+			"process_id": pid,
+		},
+	})
+	_ = helpers.ReadBody(t, killResp)
+	time.Sleep(300 * time.Millisecond)
 }
