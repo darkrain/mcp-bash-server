@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -133,6 +135,15 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		cmdStr := input.Command
 		if len(args) > 0 {
 			cmdStr = input.Command + " " + strings.Join(args, " ")
+		}
+
+		if wouldKillServer(cmdStr, cfg) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: command would kill the MCP server process (port %d, PID %d). This is blocked to prevent self-destruction.", cfg.Server.Port, os.Getpid())},
+				},
+			}, BashOutput{}, nil
 		}
 
 		if cfg.Bash.LogCommands {
@@ -265,6 +276,15 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 				IsError: true,
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", strings.Fields(input.Command)[0])},
+				},
+			}, nil, nil
+		}
+
+		if wouldKillServer(input.Command, cfg) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: command would kill the MCP server process (port %d, PID %d). This is blocked to prevent self-destruction.", cfg.Server.Port, os.Getpid())},
 				},
 			}, nil, nil
 		}
@@ -646,4 +666,36 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "\n... [output truncated]"
+}
+
+func wouldKillServer(cmd string, cfg *config.Config) bool {
+	lower := strings.ToLower(cmd)
+	portStr := strconv.Itoa(cfg.Server.Port)
+	pidStr := strconv.Itoa(os.Getpid())
+
+	killKeywords := []string{"kill", "fuser -k", "fuser -kill", "pkill", "killall", "systemctl stop", "systemctl kill", "systemctl restart", "service stop"}
+	hasKillIntent := false
+	for _, kw := range killKeywords {
+		if strings.Contains(lower, kw) {
+			hasKillIntent = true
+			break
+		}
+	}
+	if !hasKillIntent {
+		return false
+	}
+
+	if strings.Contains(lower, "mcp-bash-server") {
+		return true
+	}
+
+	if strings.Contains(cmd, pidStr) {
+		return true
+	}
+
+	if strings.Contains(cmd, portStr) {
+		return true
+	}
+
+	return false
 }

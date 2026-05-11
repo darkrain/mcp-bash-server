@@ -1,5 +1,19 @@
 # Release v1.0.4-alpha.3
 
+## Self-Protection
+
+The server now blocks commands that would kill itself. If an agent tries to run a command targeting the MCP server's own port, PID, or service name, execution is denied with a clear error message. This prevents the common scenario where an agent kills the server while trying to free a port.
+
+Blocked patterns:
+- `kill $(lsof -t -i:PORT)` or any kill command referencing the server's port
+- `fuser -k PORT/tcp`
+- `kill PID` where PID matches the server process
+- `killall mcp-bash-server`
+- `systemctl stop/kill/restart mcp-bash-server`
+- `pkill` commands referencing the server's port
+
+Safe commands like `curl http://localhost:PORT/health` are allowed — only kill-intent commands are blocked.
+
 ## Process Persistence
 
 Async processes now survive service restarts and upgrades. Architecture redesigned from in-memory to persistent storage:
