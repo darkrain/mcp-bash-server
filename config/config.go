@@ -25,6 +25,7 @@ type BashConfig struct {
 	Timeout         int      `toml:"timeout"`
 	MaxOutputSize   int      `toml:"max_output_size"`
 	LogCommands     bool     `toml:"log_commands"`
+	ProcessTTL      int      `toml:"process_ttl"`
 }
 
 type LogConfig struct {
@@ -46,6 +47,7 @@ func DefaultConfig() *Config {
 			Timeout:         30,
 			MaxOutputSize:   1048576,
 			LogCommands:     true,
+			ProcessTTL:      60,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -87,6 +89,12 @@ func Load(path string) (*Config, error) {
 			cfg.Bash.Timeout = t
 		}
 	}
+	if processTTL := os.Getenv("MCP_PROCESS_TTL"); processTTL != "" {
+		var t int
+		if _, err := fmt.Sscanf(processTTL, "%d", &t); err == nil {
+			cfg.Bash.ProcessTTL = t
+		}
+	}
 	if level := os.Getenv("MCP_LOG_LEVEL"); level != "" {
 		cfg.Log.Level = level
 	}
@@ -113,6 +121,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Bash.MaxOutputSize < 0 {
 		return fmt.Errorf("bash max_output_size cannot be negative")
+	}
+	if c.Bash.ProcessTTL < 0 {
+		return fmt.Errorf("bash process_ttl cannot be negative")
 	}
 	return nil
 }

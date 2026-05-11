@@ -16,6 +16,11 @@ max_output_size = 1048576
 # По умолчанию: true
 log_commands = true
 
+# Время жизни завершённых процессов async-команд (в минутах)
+# После истечения TTL процесс удаляется из реестра
+# По умолчанию: 60
+process_ttl = 60
+
 [log]
 level = "info"
 format = "json"

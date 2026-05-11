@@ -34,7 +34,7 @@ func main() {
 	logger := setupLogger(cfg)
 	logger.Info("starting MCP bash server", "addr", cfg.ListenAddr())
 
-	mcpServer, sysInfo := server.NewMCPServer(cfg, logger)
+	mcpServer, sysInfo, registry := server.NewMCPServer(cfg, logger, Version)
 	logger.Info("server info", "hostname", sysInfo.Hostname, "ips", sysInfo.IPs, "user", sysInfo.User)
 
 	handler := mcp.NewStreamableHTTPHandler(
@@ -88,6 +88,8 @@ func main() {
 	<-sigChan
 
 	logger.Info("shutting down server")
+
+	registry.Stop()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

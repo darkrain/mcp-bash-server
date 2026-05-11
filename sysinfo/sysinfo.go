@@ -91,6 +91,17 @@ func (si *SystemInfo) ToolDescription() string {
 	)
 }
 
+func (si *SystemInfo) AsyncToolDescription() string {
+	return fmt.Sprintf(
+		"Execute a bash command asynchronously on server: %s. "+
+			"Returns immediately with a process_id. "+
+			"Use process_status to check progress, process_output to get results, process_kill to terminate. "+
+			"Use this for long-running commands instead of bash to avoid timeouts. "+
+			"Current user: %s, working directory: %s.",
+		si.ShortID(), si.User, si.WorkingDir,
+	)
+}
+
 // ServerDescription returns description for the MCP server
 func (si *SystemInfo) ServerDescription() string {
 	return fmt.Sprintf(

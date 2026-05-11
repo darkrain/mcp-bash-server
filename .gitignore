@@ -31,7 +31,8 @@ Thumbs.db
 vendor/
 go.work
 go.work.sum
-
+.agents
+skills-lock.json
 # Configs with secrets
 config.toml
 !config.example.toml

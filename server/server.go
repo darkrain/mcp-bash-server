@@ -23,6 +23,19 @@ type BashInput struct {
 	Cwd     string   `json:"cwd,omitempty" jsonschema:"optional working directory"`
 }
 
+type BashAsyncInput struct {
+	Command string `json:"command" jsonschema:"the bash command to execute asynchronously"`
+	Cwd     string `json:"cwd,omitempty" jsonschema:"optional working directory"`
+}
+
+type ProcessStatusInput struct {
+	ProcessID string `json:"process_id" jsonschema:"the ID returned by bash_async"`
+}
+
+type ProcessKillInput struct {
+	ProcessID string `json:"process_id" jsonschema:"the ID of the process to kill"`
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }
@@ -56,15 +69,21 @@ type BashOutput struct {
 	Duration int64  `json:"duration_ms" jsonschema:"execution duration in milliseconds"`
 }
 
-func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinfo.SystemInfo) {
+func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp.Server, *sysinfo.SystemInfo, *ProcessRegistry) {
 	si := sysinfo.GetSystemInfo()
 
-	server := mcp.NewServer(&mcp.Implementation{
+	processTTL := time.Duration(cfg.Bash.ProcessTTL) * time.Minute
+	if processTTL <= 0 {
+		processTTL = 60 * time.Minute
+	}
+	registry := NewProcessRegistry(processTTL)
+
+	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-bash-server",
-		Version: "1.0.0",
+		Version: version,
 	}, nil)
 
-	mcp.AddTool(server, &mcp.Tool{
+	mcp.AddTool(mcpServer, &mcp.Tool{
 		Name:        "bash",
 		Description: si.ToolDescription(),
 		Annotations: &mcp.ToolAnnotations{
@@ -86,34 +105,13 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 			}, BashOutput{}, nil
 		}
 
-		if len(cfg.Bash.AllowedCommands) > 0 {
-			// Check for wildcard "*" or "all" to allow any command
-			allowsAll := false
-			for _, allowed := range cfg.Bash.AllowedCommands {
-				if allowed == "*" || allowed == "all" {
-					allowsAll = true
-					break
-				}
-			}
-
-			if !allowsAll {
-				cmdName := strings.Fields(input.Command)[0]
-				found := false
-				for _, allowed := range cfg.Bash.AllowedCommands {
-					if cmdName == allowed {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return &mcp.CallToolResult{
-						IsError: true,
-						Content: []mcp.Content{
-							&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", cmdName)},
-						},
-					}, BashOutput{}, nil
-				}
-			}
+		if !isCommandAllowed(input.Command, cfg) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", strings.Fields(input.Command)[0])},
+				},
+			}, BashOutput{}, nil
 		}
 
 		timeout := cfg.Bash.Timeout
@@ -239,7 +237,337 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger) (*mcp.Server, *sysinf
 		}, output, nil
 	})
 
-	return server, si
+	mcp.AddTool(mcpServer, &mcp.Tool{
+		Name:        "bash_async",
+		Description: si.AsyncToolDescription(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Async Bash Command Executor",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input BashAsyncInput) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(input.Command) == "" {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: "Error: command is empty"},
+				},
+			}, nil, nil
+		}
+
+		if !isCommandAllowed(input.Command, cfg) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: command '%s' is not in the allowed commands list", strings.Fields(input.Command)[0])},
+				},
+			}, nil, nil
+		}
+
+		p := registry.NewProcess(input.Command, input.Cwd)
+
+		if cfg.Bash.LogCommands {
+			logger.Info("async command started", "process_id", p.ID, "command", redactCommand(input.Command), "cwd", input.Cwd)
+		}
+
+		go runAsyncProcess(p, registry, cfg, logger)
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Process started. ID: %s\nStatus: running\n\nUse process_status to check progress, process_output to get results, process_kill to terminate.", p.ID)},
+			},
+		}, map[string]any{"process_id": p.ID, "status": "running"}, nil
+	})
+
+	mcp.AddTool(mcpServer, &mcp.Tool{
+		Name:        "process_status",
+		Description: "Check the status of an asynchronously launched process. Returns current status (running/completed/failed/killed), elapsed time, and exit code if finished.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Process Status Check",
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ProcessStatusInput) (*mcp.CallToolResult, any, error) {
+		p, ok := registry.Get(input.ProcessID)
+		if !ok {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: process '%s' not found. It may have expired or never existed. Use process_list to see active processes.", input.ProcessID)},
+				},
+			}, nil, nil
+		}
+
+		elapsed := time.Since(p.StartedAt).Milliseconds()
+		result := map[string]any{
+			"process_id": p.ID,
+			"status":     string(p.Status),
+			"command":    p.Command,
+			"elapsed_ms": elapsed,
+		}
+		if p.ExitCode != 0 || p.Status != StatusRunning {
+			result["exit_code"] = p.ExitCode
+		}
+		if p.Duration > 0 {
+			result["duration_ms"] = p.Duration
+		}
+
+		var text string
+		switch p.Status {
+		case StatusRunning:
+			text = fmt.Sprintf("Process %s is still running (%d ms elapsed)", p.ID, elapsed)
+		case StatusCompleted:
+			text = fmt.Sprintf("Process %s completed with exit code %d in %d ms", p.ID, p.ExitCode, p.Duration)
+		case StatusFailed:
+			text = fmt.Sprintf("Process %s failed with exit code %d in %d ms", p.ID, p.ExitCode, p.Duration)
+		case StatusKilled:
+			text = fmt.Sprintf("Process %s was killed after %d ms", p.ID, p.Duration)
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: text},
+			},
+		}, result, nil
+	})
+
+	mcp.AddTool(mcpServer, &mcp.Tool{
+		Name:        "process_output",
+		Description: "Get the output (stdout and stderr) of a completed async process. The process must be in completed/failed/killed state. Use process_status first to check if it's done.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Process Output Reader",
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ProcessStatusInput) (*mcp.CallToolResult, any, error) {
+		p, ok := registry.Get(input.ProcessID)
+		if !ok {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: process '%s' not found", input.ProcessID)},
+				},
+			}, nil, nil
+		}
+
+		if p.Status == StatusRunning {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Process %s is still running. Use process_status to check when it completes.", p.ID)},
+				},
+			}, nil, nil
+		}
+
+		var content []mcp.Content
+		if p.Stdout != "" {
+			content = append(content, &mcp.TextContent{
+				Text: fmt.Sprintf("=== STDOUT ===\n%s", p.Stdout),
+			})
+		}
+		if p.Stderr != "" {
+			content = append(content, &mcp.TextContent{
+				Text: fmt.Sprintf("=== STDERR ===\n%s", p.Stderr),
+			})
+		}
+		if len(content) == 0 {
+			content = append(content, &mcp.TextContent{
+				Text: fmt.Sprintf("Process completed with exit code %d (no output)", p.ExitCode),
+			})
+		}
+
+		return &mcp.CallToolResult{
+				Content: content,
+			}, map[string]any{
+				"process_id": p.ID,
+				"exit_code":  p.ExitCode,
+				"stdout":     p.Stdout,
+				"stderr":     p.Stderr,
+			}, nil
+	})
+
+	mcp.AddTool(mcpServer, &mcp.Tool{
+		Name:        "process_kill",
+		Description: "Kill a running async process by its ID. Only works for processes that are still running.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Process Killer",
+			DestructiveHint: boolPtr(true),
+			OpenWorldHint:   boolPtr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ProcessKillInput) (*mcp.CallToolResult, any, error) {
+		p, ok := registry.Get(input.ProcessID)
+		if !ok {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error: process '%s' not found", input.ProcessID)},
+				},
+			}, nil, nil
+		}
+
+		if p.Status != StatusRunning {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Process %s is not running (status: %s)", p.ID, p.Status)},
+				},
+			}, nil, nil
+		}
+
+		registry.Update(input.ProcessID, func(p *Process) {
+			if p.cancel != nil {
+				p.cancel()
+			}
+		})
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Kill signal sent to process %s", input.ProcessID)},
+			},
+		}, nil, nil
+	})
+
+	mcp.AddTool(mcpServer, &mcp.Tool{
+		Name:        "process_list",
+		Description: "List all async processes and their current statuses. Useful to find running or recently completed processes.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Process List",
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		processes := registry.List()
+		if len(processes) == 0 {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: "No async processes found."},
+				},
+			}, nil, nil
+		}
+
+		var lines []string
+		for _, p := range processes {
+			elapsed := time.Since(p.StartedAt).Milliseconds()
+			line := fmt.Sprintf("%s | %s | %s", p.ID, p.Status, p.Command)
+			if p.Status == StatusRunning {
+				line += fmt.Sprintf(" (%dms elapsed)", elapsed)
+			} else if p.Duration > 0 {
+				line += fmt.Sprintf(" (exit %d, %dms)", p.ExitCode, p.Duration)
+			}
+			lines = append(lines, line)
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: strings.Join(lines, "\n")},
+			},
+		}, nil, nil
+	})
+
+	return mcpServer, si, registry
+}
+
+func isCommandAllowed(command string, cfg *config.Config) bool {
+	if len(cfg.Bash.AllowedCommands) == 0 {
+		return true
+	}
+	for _, allowed := range cfg.Bash.AllowedCommands {
+		if allowed == "*" || allowed == "all" {
+			return true
+		}
+	}
+	cmdName := strings.Fields(command)[0]
+	for _, allowed := range cfg.Bash.AllowedCommands {
+		if cmdName == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func runAsyncProcess(p *Process, registry *ProcessRegistry, cfg *config.Config, logger *slog.Logger) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	registry.Update(p.ID, func(proc *Process) {
+		proc.cancel = cancel
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	args := []string{"-c", p.Command}
+	cmdStr := "/bin/bash" + " " + strings.Join(args, " ")
+
+	if cfg.Bash.LogCommands {
+		logger.Info("async command executing", "process_id", p.ID, "command", redactCommand(cmdStr))
+	}
+
+	cmd := exec.CommandContext(ctx, "/bin/bash", args...)
+	if p.Cwd != "" {
+		cmd.Dir = p.Cwd
+	}
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	var err error
+	if startErr := cmd.Start(); startErr == nil {
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err = <-done:
+		case <-ctx.Done():
+			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
+			<-done
+			err = ctx.Err()
+		}
+	} else {
+		err = startErr
+	}
+
+	now := time.Now()
+	exitCode := 0
+	status := StatusCompleted
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+			if status2, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+				exitCode = status2.ExitStatus()
+			}
+		} else if ctx.Err() != nil {
+			exitCode = -1
+			status = StatusKilled
+		} else {
+			exitCode = -1
+			status = StatusFailed
+		}
+	}
+
+	stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
+	if !utf8.ValidString(stdout) {
+		stdout = "[binary output truncated]"
+	}
+	if !utf8.ValidString(stderr) {
+		stderr = "[binary output truncated]"
+	}
+
+	registry.Update(p.ID, func(proc *Process) {
+		proc.Status = status
+		proc.ExitCode = exitCode
+		proc.Stdout = stdout
+		proc.Stderr = stderr
+		proc.EndedAt = &now
+		proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+		proc.cancel = nil
+	})
+
+	if cfg.Bash.LogCommands {
+		logger.Info("async command completed", "process_id", p.ID, "status", string(status), "exit_code", exitCode, "duration_ms", now.Sub(p.StartedAt).Milliseconds())
+	}
 }
 
 func truncateOutputs(stdout, stderr string, maxTotal int) (string, string) {

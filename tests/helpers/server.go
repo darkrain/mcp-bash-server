@@ -38,7 +38,7 @@ func NewTestServer(t *testing.T, cfg *config.Config) *TestServer {
 	cfg.Server.Port = 0
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	mcpServer, _ := mcpserver.NewMCPServer(cfg, logger)
+	mcpServer, _, _ := mcpserver.NewMCPServer(cfg, logger, "test")
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpServer },
