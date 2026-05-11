@@ -27,8 +27,8 @@ MCP сервер для выполнения bash команд на сервер
 
 ```bash
 # Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.1/mcp-bash-server_1.0.4-alpha.1_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.1_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.2/mcp-bash-server_1.0.4-alpha.2_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.2_amd64.deb
 sudo systemctl enable --now mcp-bash-server
 ```
 
@@ -67,6 +67,11 @@ max_output_size = 1048576
 # Логирование всех выполненных команд (аналог bash history)
 # По умолчанию: true
 log_commands = true
+
+# Время жизни завершённых процессов async-команд (в минутах)
+# После истечения TTL процесс удаляется из реестра
+# По умолчанию: 60
+process_ttl = 60
 
 [log]
 level = "info"
@@ -111,6 +116,7 @@ journalctl -u mcp-bash-server -f
 | `MCP_API_KEY` | API ключ |
 | `MCP_BASE_URL` | Базовый URL |
 | `MCP_BASH_TIMEOUT` | Таймаут команд (сек) |
+| `MCP_PROCESS_TTL` | TTL процессов async (мин) |
 | `MCP_LOG_LEVEL` | Уровень логирования (debug/info/warn/error) |
 
 ## Идентификация сервера
@@ -165,6 +171,63 @@ sudo -u mcp bash -c "sudo whoami"
 
 **Важно:** Пользователь `mcp` — системный, у него нет shell. Не пытайтесь зайти под ним через `su mcp`. Для дебага используйте `sudo -u mcp bash -c "команда"`.
 
+## Инструменты
+
+### bash
+Синхронное выполнение команды с ожиданием результата. Подходит для быстрых команд.
+
+Параметры:
+- `command` — команда для выполнения
+- `args` — аргументы (опционально)
+- `timeout` — таймаут в секундах (опционально)
+- `cwd` — рабочая директория (опционально)
+
+### bash_async
+Асинхронное выполнение команды. Мгновенно возвращает `process_id`, без блокировки и таймаутов. Подходит для долгих процессов (apt update, сборка, скачивание).
+
+Параметры:
+- `command` — команда для выполнения
+- `cwd` — рабочая директория (опционально)
+
+Возвращает: `process_id` и подсказку использовать `process_status` для проверки.
+
+### process_status
+Проверка статуса асинхронного процесса. Возвращает статус (running/completed/failed/killed), прошедшее время, exit code.
+
+Параметры:
+- `process_id` — ID процесса, полученный от `bash_async`
+
+### process_output
+Получение stdout/stderr завершённого процесса. Процесс должен быть в состоянии completed/failed/killed.
+
+Параметры:
+- `process_id` — ID процесса
+
+### process_kill
+Принудительное завершение запущенного процесса.
+
+Параметры:
+- `process_id` — ID процесса
+
+### process_list
+Список всех процессов и их текущих статусов.
+
+### Пример workflow
+
+```
+Агент → bash_async({ command: "apt update" })
+      ← { process_id: "7fcb2ad5559e9b32", status: "running" }
+
+Агент → process_status({ process_id: "7fcb2ad5559e9b32" })
+      ← { status: "running", elapsed_ms: 30000 }
+
+Агент → process_status({ process_id: "7fcb2ad5559e9b32" })
+      ← { status: "completed", exit_code: 0, duration_ms: 45000 }
+
+Агент → process_output({ process_id: "7fcb2ad5559e9b32" })
+      ← { stdout: "...", stderr: "..." }
+```
+
 ## API
 
 ### Health Check
@@ -189,7 +252,7 @@ curl -X POST http://localhost:8080/mcp/ \
   }'
 ```
 
-### Выполнение команды (через MCP tool)
+### Выполнение команды (синхронно, через MCP tool)
 Инструмент `bash` принимает:
 - `command` — команда для выполнения
 - `args` — аргументы (опционально)
@@ -223,8 +286,8 @@ curl -X POST http://localhost:8080/mcp/ \
 
 | Архитектура | Бинарник | DEB пакет |
 |-------------|----------|-----------|
-| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.1_amd64.deb` |
-| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.1_arm64.deb` |
+| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.2_amd64.deb` |
+| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.2_arm64.deb` |
 
 Бинарники статически слинкованы (CGO_ENABLED=0) и работают без зависимостей от libc.
 
@@ -236,13 +299,16 @@ curl -X POST http://localhost:8080/mcp/ \
 ├── config/
 │   └── config.go               # Загрузка конфигурации (TOML + env vars)
 ├── server/
-│   └── server.go               # MCP сервер и tool handler
+│   ├── server.go               # MCP сервер и tool handlers
+│   ├── process.go              # Process registry (async processes)
+│   └── process_test.go         # Unit-тесты registry
 ├── sysinfo/
 │   └── sysinfo.go              # Системная информация (hostname, IP и т.д.)
 ├── packaging/
 │   ├── systemd/                # systemd unit
 │   └── deb/                    # DEBIAN скрипты
 ├── tests/
+│   ├── helpers/                # Test helpers
 │   └── integration/            # Интеграционные тесты
 ├── config.example.toml         # Пример конфигурации
 ├── Makefile                    # Сборка
