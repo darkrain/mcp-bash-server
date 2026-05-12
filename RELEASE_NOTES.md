@@ -1,3 +1,22 @@
+# Release v1.0.4-alpha.5
+
+## Fix: systemd ReadWritePaths for bbolt
+
+The systemd service unit had `ProtectSystem=strict` with only `/tmp` in `ReadWritePaths`. This made `/var/lib/mcp-bash-server/processes.db` read-only, causing bbolt to fail on startup.
+
+Fix: added `/var/lib/mcp-bash-server` to `ReadWritePaths` in the service unit and updated the postinst sed pattern to match.
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.5_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.5_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.4
 
 ## Timeout-to-Async

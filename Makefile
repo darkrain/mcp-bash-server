@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.4
+VERSION := 1.0.4-alpha.5
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 

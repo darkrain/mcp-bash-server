@@ -45,7 +45,7 @@ if grep -rqs "^mcp.*ALL=.*NOPASSWD:.*ALL" /etc/sudoers /etc/sudoers.d/ 2>/dev/nu
     sed -i 's/^NoNewPrivileges=true$/# NoNewPrivileges=true/' "$SERVICE_FILE"
     sed -i 's/^ProtectSystem=strict$/# ProtectSystem=strict/' "$SERVICE_FILE"
     sed -i 's/^ProtectHome=true$/# ProtectHome=true/' "$SERVICE_FILE"
-    sed -i 's/^ReadWritePaths=\/$/# ReadWritePaths=/' "$SERVICE_FILE"
+    sed -i 's|^ReadWritePaths=/tmp /var/lib/mcp-bash-server$|# ReadWritePaths=/tmp /var/lib/mcp-bash-server|' "$SERVICE_FILE"
     sed -i 's/^PrivateTmp=true$/# PrivateTmp=true/' "$SERVICE_FILE"
     sed -i 's/^ProtectKernelTunables=true$/# ProtectKernelTunables=true/' "$SERVICE_FILE"
     sed -i 's/^ProtectKernelModules=true$/# ProtectKernelModules=true/' "$SERVICE_FILE"
