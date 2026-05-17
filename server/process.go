@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -47,11 +48,11 @@ type ProcessRegistry struct {
 }
 
 func NewProcessRegistry(dir string, ttl time.Duration, logger *slog.Logger) (*ProcessRegistry, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create process dir: %w", err)
 	}
 	outputDir := filepath.Join(dir, "output")
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create output dir: %w", err)
 	}
 
@@ -272,7 +273,7 @@ func (r *ProcessRegistry) Remove(id string) {
 
 func (r *ProcessRegistry) CreateOutputFile(id string) (*os.File, error) {
 	path := filepath.Join(r.dir, "output", id+".log")
-	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 }
 
 func (r *ProcessRegistry) ReadOutput(p *Process, maxSize int) (string, error) {
@@ -311,6 +312,37 @@ func (r *ProcessRegistry) ReadOutput(p *Process, maxSize int) (string, error) {
 }
 
 func (r *ProcessRegistry) Stop() {
+	var running []*Process
+	r.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketName)
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var p Process
+			if err := json.Unmarshal(v, &p); err != nil {
+				continue
+			}
+			if p.Status == StatusRunning && p.PID > 0 {
+				pCopy := p
+				running = append(running, &pCopy)
+			}
+		}
+		return nil
+	})
+
+	for _, p := range running {
+		if isPIDAlive(p.PID) {
+			_ = syscall.Kill(-p.PID, syscall.SIGKILL)
+			_ = syscall.Kill(p.PID, syscall.SIGKILL)
+			now := time.Now()
+			r.Update(p.ID, func(proc *Process) {
+				proc.Status = StatusKilled
+				proc.ExitCode = -1
+				proc.EndedAt = &now
+				proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+			})
+		}
+	}
+
 	close(r.stopCh)
 	r.db.Close()
 }
@@ -376,12 +408,15 @@ func isPIDAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return false
 	}
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	fields := strings.SplitN(string(data), " ", 4)
+	if len(fields) < 3 {
+		return false
+	}
+	return fields[2] != "Z"
 }
 
 func generateProcessID() string {

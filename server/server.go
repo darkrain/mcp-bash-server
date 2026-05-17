@@ -237,23 +237,52 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}
 
 		var args []string
-		if len(input.Args) > 0 {
-			args = input.Args
-		} else {
-			args = []string{"-c", input.Command}
-			input.Command = "/bin/bash"
-		}
+		var cmdStr string
 
-		cmdStr := input.Command
-		if len(args) > 0 {
-			cmdStr = input.Command + " " + strings.Join(args, " ")
+		if isAllowlistWildcard(cfg) {
+			if len(input.Args) > 0 {
+				args = input.Args
+				cmdStr = input.Command + " " + strings.Join(args, " ")
+			} else {
+				args = []string{"-c", input.Command}
+				input.Command = "/bin/bash"
+				cmdStr = "/bin/bash -c " + input.Command
+			}
+		} else {
+			cmdName := strings.Fields(input.Command)[0]
+			input.Command = resolveCommandPath(cmdName)
+
+			if len(input.Args) > 0 {
+				if shellBinaries[cmdName] && hasShellFlag(input.Args) {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{Text: "Error: shell -c flag is not allowed when command allowlist is active"},
+						},
+					}, BashOutput{}, nil
+				}
+				args = input.Args
+				cmdStr = input.Command + " " + strings.Join(args, " ")
+			} else {
+				fields := strings.Fields(input.Command)
+				if len(fields) > 1 {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{Text: fmt.Sprintf("Error: when command allowlist is active, use 'command' for the binary name and 'args' for arguments. Complex shell syntax ('%s') is not allowed.", input.Command)},
+						},
+					}, BashOutput{}, nil
+				}
+				args = []string{}
+				cmdStr = input.Command
+			}
 		}
 
 		if wouldKillServer(cmdStr, cfg) {
 			return &mcp.CallToolResult{
 				IsError: true,
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("Error: command would kill the MCP server process (port %d, PID %d). This is blocked to prevent self-destruction.", cfg.Server.Port, os.Getpid())},
+					&mcp.TextContent{Text: "Error: command would kill the MCP server process. This is blocked to prevent self-destruction."},
 				},
 			}, BashOutput{}, nil
 		}
@@ -406,7 +435,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 			return &mcp.CallToolResult{
 				IsError: true,
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("Error: command would kill the MCP server process (port %d, PID %d). This is blocked to prevent self-destruction.", cfg.Server.Port, os.Getpid())},
+					&mcp.TextContent{Text: "Error: command would kill the MCP server process. This is blocked to prevent self-destruction."},
 				},
 			}, nil, nil
 		}
@@ -627,7 +656,7 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 
 		var lines []string
 		for _, p := range processes {
-			line := fmt.Sprintf("%s | %s | %s", p.ID, p.Status, p.Command)
+			line := fmt.Sprintf("%s | %s | %s", p.ID, p.Status, redactCommand(p.Command))
 			if p.Status == StatusRunning {
 				elapsed := time.Since(p.StartedAt).Milliseconds()
 				line += fmt.Sprintf(" (PID %d, %dms elapsed)", p.PID, elapsed)
@@ -663,6 +692,44 @@ func isCommandAllowed(command string, cfg *config.Config) bool {
 		}
 	}
 	return false
+}
+
+func isAllowlistWildcard(cfg *config.Config) bool {
+	for _, allowed := range cfg.Bash.AllowedCommands {
+		if allowed == "*" || allowed == "all" {
+			return true
+		}
+	}
+	return len(cfg.Bash.AllowedCommands) == 0
+}
+
+var shellBinaries = map[string]bool{
+	"bash": true, "sh": true, "dash": true, "zsh": true, "csh": true, "tcsh": true, "ksh": true,
+	"/bin/bash": true, "/bin/sh": true, "/bin/dash": true, "/bin/zsh": true,
+	"/usr/bin/bash": true, "/usr/bin/sh": true, "/usr/bin/dash": true, "/usr/bin/zsh": true,
+}
+
+func hasShellFlag(args []string) bool {
+	for i, a := range args {
+		if a == "-c" {
+			return true
+		}
+		if strings.HasPrefix(a, "-") && strings.Contains(a, "c") && i+1 < len(args) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveCommandPath(cmdName string) string {
+	if strings.Contains(cmdName, "/") {
+		return cmdName
+	}
+	path, err := exec.LookPath(cmdName)
+	if err != nil {
+		return cmdName
+	}
+	return path
 }
 
 func runAsyncProcess(p *Process, registry *ProcessRegistry, cfg *config.Config, logger *slog.Logger) {

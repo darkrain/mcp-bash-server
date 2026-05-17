@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.6
+VERSION := 1.0.4-alpha.7
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 
@@ -101,6 +101,7 @@ define build-deb
 	@rm -rf $(BUILD_DIR)/deb-$1
 	@mkdir -p $(BUILD_DIR)/deb-$1/DEBIAN
 	@mkdir -p $(BUILD_DIR)/deb-$1/usr/bin
+	@mkdir -p $(BUILD_DIR)/deb-$1/usr/sbin
 	@mkdir -p $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)
 	@mkdir -p $(BUILD_DIR)/deb-$1/var/lib/$(BINARY_NAME)/output
 	@mkdir -p $(BUILD_DIR)/deb-$1/lib/systemd/system
@@ -108,6 +109,9 @@ define build-deb
 
 	@cp $2 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
 	@chmod 755 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
+
+	@cp packaging/deb/configure-helper $(BUILD_DIR)/deb-$1/usr/sbin/mcp-bash-server-configure
+	@chmod 755 $(BUILD_DIR)/deb-$1/usr/sbin/mcp-bash-server-configure
 
 	@cp config.example.toml $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.example.toml
 	@chmod 644 $(BUILD_DIR)/deb-$1/etc/$(BINARY_NAME)/config.example.toml

@@ -52,8 +52,8 @@ sudo apt update && sudo apt install --only-upgrade mcp-bash-server
 
 ```bash
 # Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.6/mcp-bash-server_1.0.4-alpha.6_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.6_amd64.deb
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.7/mcp-bash-server_1.0.4-alpha.7_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.7_amd64.deb
 sudo systemctl enable --now mcp-bash-server
 ```
 
@@ -317,8 +317,8 @@ curl -X POST http://localhost:8080/mcp/ \
 
 | Архитектура | Бинарник | DEB пакет |
 |-------------|----------|-----------|
-| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.6_amd64.deb` |
-| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.6_arm64.deb` |
+| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.7_amd64.deb` |
+| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.7_arm64.deb` |
 
 Бинарники статически слинкованы (CGO_ENABLED=0) и работают без зависимостей от libc.
 

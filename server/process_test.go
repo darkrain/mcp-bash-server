@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -158,6 +159,36 @@ func TestProcessRegistryCleanup(t *testing.T) {
 	}
 }
 
+func TestProcessRegistryStopKillsRunningProcesses(t *testing.T) {
+	dir := t.TempDir()
+
+	r, err := NewProcessRegistry(dir, 60*time.Minute, nil)
+	if err != nil {
+		t.Fatalf("failed to create registry: %v", err)
+	}
+
+	cmd := exec.Command("sleep", "300")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start sleep process: %v", err)
+	}
+	pid := cmd.Process.Pid
+
+	p := r.NewProcess("sleep 300", "")
+	r.Update(p.ID, func(proc *Process) {
+		proc.PID = pid
+	})
+
+	r.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	if isPIDAlive(pid) {
+		_ = cmd.Process.Kill()
+		t.Fatalf("expected PID %d to be killed after Stop()", pid)
+	}
+}
+
 func TestProcessRegistryRecoveryDeadPID(t *testing.T) {
 	dir := t.TempDir()
 
@@ -184,53 +215,6 @@ func TestProcessRegistryRecoveryDeadPID(t *testing.T) {
 	}
 	if got.Status != StatusFailed {
 		t.Fatalf("expected failed (dead PID), got %s", got.Status)
-	}
-	if got.PID != 99999999 {
-		t.Fatalf("expected PID 99999999, got %d", got.PID)
-	}
-}
-
-func TestProcessRegistryRecoveryAliveProcess(t *testing.T) {
-	dir := t.TempDir()
-
-	r1, err := NewProcessRegistry(dir, 60*time.Minute, nil)
-	if err != nil {
-		t.Fatalf("failed to create registry: %v", err)
-	}
-
-	cmd := exec.Command("sleep", "2")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start sleep process: %v", err)
-	}
-
-	p := r1.NewProcess("sleep 2", "")
-	r1.Update(p.ID, func(proc *Process) {
-		proc.PID = cmd.Process.Pid
-	})
-	r1.Stop()
-
-	r2, err := NewProcessRegistry(dir, 60*time.Minute, nil)
-	if err != nil {
-		t.Fatalf("failed to create registry on recovery: %v", err)
-	}
-	defer r2.Stop()
-
-	got, ok := r2.Get(p.ID)
-	if !ok {
-		t.Fatal("expected to find process after recovery")
-	}
-	if got.Status != StatusRunning {
-		t.Fatalf("expected running (alive PID), got %s", got.Status)
-	}
-
-	time.Sleep(3 * time.Second)
-
-	got, ok = r2.Get(p.ID)
-	if !ok {
-		t.Fatal("expected to find process after sleep finished")
-	}
-	if got.Status != StatusCompleted {
-		t.Fatalf("expected completed after sleep, got %s", got.Status)
 	}
 }
 

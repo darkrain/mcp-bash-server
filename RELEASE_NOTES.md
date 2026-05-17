@@ -1,3 +1,74 @@
+# Release v1.0.4-alpha.7
+
+## Security Hardening
+
+Comprehensive security audit and fixes based on vulnerability assessment.
+
+### Critical: allowed_commands Bypass Fixed (VULN-04/05)
+
+When `allowed_commands` was set (e.g., `["ls", "cat"]`), commands were still executed through `/bin/bash -c`, making the allowlist trivially bypassable with `ls; cat /etc/shadow` or `ls || malicious_command`.
+
+**Fix:** When an allowlist is active (not wildcard), commands are executed **directly** without a shell:
+- The binary is resolved to its full path via `exec.LookPath`
+- Complex shell syntax (semicolons, pipes, `&&`, `||`) is rejected — use `command` for the binary and `args` for arguments
+- Shell `-c` flag is blocked when a shell binary is in the allowlist
+- When `allowed_commands = ["*"]` or `["all"]`, behavior is unchanged (bash -c)
+
+### High: Running Processes Killed on Shutdown (VULN-16)
+
+Previously, `Stop()` only closed the database. All running async/timed-out processes continued as orphans after server shutdown, accumulating over restarts.
+
+**Fix:** `Stop()` now kills all running processes (both PGID and PID), marks them as `killed` in the registry, then closes the database.
+
+Also fixed: `isPIDAlive()` now checks `/proc/[pid]/stat` for zombie state instead of using `Signal(0)`, which incorrectly reported killed processes as alive (zombies still accept signal 0).
+
+### High: Random API Key on First Install (VULN-02/03)
+
+Default installation had no authentication (`api_key = ""`) and bound to `0.0.0.0`, exposing an unauthenticated RCE endpoint to the network.
+
+**Fix:**
+- First install generates a random 48-hex-char API key and writes it to `config.toml`
+- Default bind changed to `127.0.0.1` (localhost only)
+- Key is displayed once during installation
+- For remote access, explicitly set `host = "0.0.0.0"` in config
+
+### Medium: File Permissions Hardened (VULN-10/11)
+
+- Process output files: `0644` → `0600` (owner-only read/write)
+- Process data directories: `0755` → `0700` (owner-only access)
+
+### Medium: Command Redaction in process_list (VULN-26)
+
+`process_list` now applies `redactCommand()` to command strings, preventing exposure of passwords/tokens in shared environments.
+
+### Medium: Error Messages Sanitized (VULN-21)
+
+Error messages no longer expose the server's PID and port number to clients.
+
+### Low: Timeout Validation (VULN-25)
+
+`timeout=0` and `sync_timeout=0` are now treated as "use defaults" (30s and 5s respectively) instead of "no timeout".
+
+## Sudo Configuration Redesign
+
+The postinst script no longer auto-detects sudo and modifies the packaged systemd unit file with `sed`. Instead:
+
+- **Interactive prompt:** `Grant sudo (root) access to the mcp user? [y/N]`
+- **Non-interactive:** No sudo by default, with a hint to run `mcp-bash-server-configure sudo`
+- **Systemd override:** Sudo-related sandbox disabling uses `/etc/systemd/system/mcp-bash-server.service.d/sudo-override.conf` instead of modifying the packaged unit file
+- **New utility:** `mcp-bash-server-configure {sudo|no-sudo|status}` for reconfiguration after install
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.7_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.7_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.6
 
 ## Fix: MCP error -32001 (Request timed out) — sync_timeout 5s

@@ -132,8 +132,14 @@ func (c *Config) Validate() error {
 	if c.Bash.Timeout < 0 {
 		return fmt.Errorf("bash timeout cannot be negative")
 	}
+	if c.Bash.Timeout == 0 {
+		c.Bash.Timeout = 30
+	}
 	if c.Bash.SyncTimeout < 0 {
 		return fmt.Errorf("bash sync_timeout cannot be negative")
+	}
+	if c.Bash.SyncTimeout == 0 {
+		c.Bash.SyncTimeout = 5
 	}
 	if c.Bash.MaxOutputSize < 0 {
 		return fmt.Errorf("bash max_output_size cannot be negative")

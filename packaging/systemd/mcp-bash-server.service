@@ -15,7 +15,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mcp-bash-server
 
-# Security hardening (required for restricted environments; auto-disabled by postinst if mcp has sudo)
+# Security hardening (disabled via systemd override when sudo is granted; see: mcp-bash-server-configure)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

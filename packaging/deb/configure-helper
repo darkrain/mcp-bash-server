@@ -1,0 +1,84 @@
+#!/bin/bash
+set -e
+
+SUDOERS_FILE=/etc/sudoers.d/mcp
+OVERRIDE_DIR=/etc/systemd/system/mcp-bash-server.service.d
+OVERRIDE_FILE="$OVERRIDE_DIR/sudo-override.conf"
+
+enable_sudo() {
+    echo "Enabling sudo access for mcp user..."
+    echo "mcp ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_FILE"
+    chmod 440 "$SUDOERS_FILE"
+    chown root:root "$SUDOERS_FILE"
+
+    mkdir -p "$OVERRIDE_DIR"
+    cat > "$OVERRIDE_FILE" <<'EOF'
+# Sudo access requires disabling some systemd security restrictions
+[Service]
+NoNewPrivileges=
+ProtectSystem=
+ProtectHome=
+ReadWritePaths=
+PrivateTmp=
+ProtectKernelTunables=
+ProtectKernelModules=
+ProtectControlGroups=
+RestrictSUIDSGID=
+RestrictRealtime=
+RestrictNamespaces=
+LockPersonality=
+MemoryDenyWriteExecute=
+SystemCallFilter=
+SystemCallErrorNumber=
+EOF
+    systemctl daemon-reload
+    echo "Done. Sudo enabled, sandbox disabled."
+    echo "Restart service: sudo systemctl restart mcp-bash-server"
+}
+
+disable_sudo() {
+    echo "Disabling sudo access for mcp user..."
+    rm -f "$SUDOERS_FILE" 2>/dev/null || true
+    rm -f "$OVERRIDE_FILE" 2>/dev/null || true
+    if [ -d "$OVERRIDE_DIR" ] && [ -z "$(ls -A "$OVERRIDE_DIR" 2>/dev/null)" ]; then
+        rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+    fi
+    systemctl daemon-reload
+    echo "Done. Sudo removed, sandbox enabled."
+    echo "Restart service: sudo systemctl restart mcp-bash-server"
+}
+
+show_status() {
+    echo "=== mcp-bash-server configuration ==="
+    if [ -f "$SUDOERS_FILE" ]; then
+        echo "Sudo: ENABLED ($SUDOERS_FILE)"
+    else
+        echo "Sudo: DISABLED"
+    fi
+    if [ -f "$OVERRIDE_FILE" ]; then
+        echo "Sandbox: DISABLED (override active)"
+    else
+        echo "Sandbox: ENABLED (default hardening)"
+    fi
+}
+
+case "${1:-}" in
+    sudo|enable-sudo)
+        enable_sudo
+        ;;
+    no-sudo|disable-sudo)
+        disable_sudo
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: mcp-bash-server-configure {sudo|no-sudo|status}"
+        echo ""
+        echo "Commands:"
+        echo "  sudo       Grant sudo access and disable sandbox"
+        echo "  no-sudo    Revoke sudo access and enable sandbox"
+        echo "  status     Show current configuration"
+        exit 1
+        ;;
+esac
