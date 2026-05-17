@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.5
+VERSION := 1.0.4-alpha.6
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 
@@ -30,7 +30,12 @@ YELLOW := \033[33m
 RED := \033[31m
 NC := \033[0m
 
-.PHONY: all build build-all test clean deb-all release lint run
+# APT repository settings
+APT_REPO_DIR := $(BUILD_DIR)/apt-repo
+APT_REPO_BRANCH := gh-pages
+APT_REPO_URL := https://darkrain.github.io/mcp-bash-server
+
+.PHONY: all build build-all test clean deb-all release lint run apt-repo-init apt-repo-add apt-repo-push
 
 all: build
 
@@ -165,6 +170,37 @@ uninstall: ## Uninstall binary (requires sudo)
 	@rm -f /etc/systemd/system/$(BINARY_NAME).service
 	@systemctl daemon-reload
 	@echo "$(GREEN)Uninstall complete$(NC)"
+
+apt-repo-init: ## Initialize local apt repo (requires reprepro)
+	@echo "$(BLUE)Initializing apt repository...$(NC)"
+	@mkdir -p $(APT_REPO_DIR)/conf
+	@echo 'Codename: stable' > $(APT_REPO_DIR)/conf/distributions
+	@echo 'Components: main' >> $(APT_REPO_DIR)/conf/distributions
+	@echo 'Architectures: amd64 arm64' >> $(APT_REPO_DIR)/conf/distributions
+	@echo 'SignWith: yes' >> $(APT_REPO_DIR)/conf/distributions
+	@echo "$(GREEN)Apt repo initialized at $(APT_REPO_DIR)$(NC)"
+	@echo "$(YELLOW)Create a GPG key first: gpg --full-generate-key$(NC)"
+	@echo "$(YELLOW)Then export pubkey: gpg --export --armor > $(APT_REPO_DIR)/repo.gpg.key$(NC)"
+
+apt-repo-add: deb-all ## Build debs and add to local apt repo
+	@echo "$(BLUE)Adding packages to apt repository...$(NC)"
+	@reprepro -b $(APT_REPO_DIR) includedeb stable \
+		$(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$(ARCH_AMD64).deb \
+		$(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$(ARCH_ARM64).deb
+	@echo "$(GREEN)Packages added$(NC)"
+
+apt-repo-push: ## Push apt repo to GitHub Pages
+	@echo "$(BLUE)Pushing apt repo to gh-pages branch...$(NC)"
+	@if git worktree list | grep -q '$(APT_REPO_DIR)'; then \
+		cd $(APT_REPO_DIR) && git add -A && git commit -m "apt repo: v$(VERSION)" && git push origin $(APT_REPO_BRANCH); \
+	else \
+		git worktree add --track -b $(APT_REPO_BRANCH) $(APT_REPO_DIR) origin/$(APT_REPO_BRANCH) 2>/dev/null || \
+		git worktree add $(APT_REPO_DIR) $(APT_REPO_BRANCH) 2>/dev/null || \
+		(echo "$(RED)Branch $(APT_REPO_BRANCH) not found. Create it first:$(NC)" && \
+		 echo "  git worktree add --orphan:gh-pages $(APT_REPO_DIR)" && exit 1); \
+		cd $(APT_REPO_DIR) && git add -A && git commit -m "apt repo: v$(VERSION)" && git push origin $(APT_REPO_BRANCH); \
+	fi
+	@echo "$(GREEN)Apt repo pushed$(NC)"
 
 help: ## Show this help
 	@echo "$(GREEN)$(BINARY_NAME) v$(VERSION) - Available targets:$(NC)"
