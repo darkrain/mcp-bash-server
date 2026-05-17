@@ -1,3 +1,49 @@
+# Release v1.0.4-alpha.6
+
+## Fix: MCP error -32001 (Request timed out) — sync_timeout 5s
+
+In v1.0.4-alpha.4, timed-out synchronous commands were transferred to async execution, but the timeout value (`bash.timeout`, default 30s) could still exceed the MCP client's own request timeout (~60s). When the client disconnected first, the server had no way to send a response, and the agent received `MCP error -32001: Request timed out` — often causing the agent to terminate.
+
+### Root Cause
+
+The server-side timeout-to-async logic used `bash.timeout` (30s default). MCP clients (Cursor, Claude Desktop) have their own request timeouts. If a command ran longer than the client timeout but shorter than `bash.timeout`, the client would disconnect before the server could respond — resulting in the -32001 error with no recovery path.
+
+### Fix: sync_timeout
+
+New configuration option `sync_timeout` (default **5 seconds**) limits how long a synchronous `bash` command waits before being transferred to background execution. Since sync commands are typically lightweight (`ls`, `cat`, `grep`, etc.), 5 seconds is more than sufficient. Longer-running commands should use `bash_async` explicitly.
+
+The effective timeout is calculated as:
+```
+min(sync_timeout, bash_timeout, ctx_deadline - 3s margin)
+```
+This guarantees the server **always** returns a response before the client disconnects.
+
+Additionally, `ctx.Done()` is now monitored — if the client disconnects for any reason, the command is immediately transferred to async execution and a proper response is returned.
+
+### New Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `sync_timeout` | `5` | Max seconds for synchronous bash execution before transferring to async |
+| `MCP_BASH_SYNC_TIMEOUT` | — | Environment variable override |
+
+### Refactoring
+
+- `transferToAsync()` — extracted reusable function for moving a running process to the async registry
+- `effectiveSyncTimeout()` — computes the safe deadline from multiple constraints
+- Eliminated the old `timeoutCh` goroutine-based timer pattern in favor of `time.NewTimer` with proper cleanup
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.6_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.6_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.5
 
 ## Fix: systemd ReadWritePaths for bbolt
