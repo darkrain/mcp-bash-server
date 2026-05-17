@@ -16,9 +16,9 @@ enable_sudo() {
 # Sudo access requires disabling some systemd security restrictions
 [Service]
 NoNewPrivileges=
-ProtectSystem=
+ProtectSystem=full
 ProtectHome=
-ReadWritePaths=
+ReadWritePaths=/tmp /var/lib/mcp-bash-server
 PrivateTmp=
 ProtectKernelTunables=
 ProtectKernelModules=
