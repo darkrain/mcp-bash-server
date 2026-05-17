@@ -33,6 +33,26 @@ Additionally, `ctx.Done()` is now monitored — if the client disconnects for an
 - `effectiveSyncTimeout()` — computes the safe deadline from multiple constraints
 - Eliminated the old `timeoutCh` goroutine-based timer pattern in favor of `time.NewTimer` with proper cleanup
 
+## Apt Repository (GitHub Pages)
+
+New apt repository hosted on GitHub Pages for automatic updates via `apt`:
+
+```bash
+# Add GPG key
+curl -fsSL https://darkrain.github.io/mcp-bash-server/repo.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/mcp-bash-server.gpg
+
+# Add repository
+echo "deb https://darkrain.github.io/mcp-bash-server stable main" | sudo tee /etc/apt/sources.list.d/mcp-bash-server.list
+
+# Install / Update
+sudo apt update && sudo apt install mcp-bash-server
+```
+
+New Makefile targets for repository maintenance:
+- `make apt-repo-init` — initialize apt repo with gh-pages worktree
+- `make apt-repo-add` — build debs and add to repo
+- `make apt-repo-push` — push repo to GitHub Pages
+
 ## Artifacts
 
 | File | Description |

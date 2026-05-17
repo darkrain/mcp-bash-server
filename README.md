@@ -20,28 +20,41 @@ MCP сервер для выполнения bash команд на сервер
 | `make test` | Запустить тесты |
 | `make install` | Установить локально (требует sudo) |
 | `make uninstall` | Удалить локальную установку |
+| `make apt-repo-init` | Инициализировать apt-репозиторий (один раз) |
+| `make apt-repo-add` | Собрать deb-пакеты и добавить в apt-репозиторий |
+| `make apt-repo-push` | Запушить apt-репозиторий на GitHub Pages |
 | `make run` | Собрать и запустить |
 | `make clean` | Очистить артефакты |
 
 ## Установка через .deb
 
+### Через apt-репозиторий (рекомендуется)
+
 ```bash
-# Скачать и установить
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.5/mcp-bash-server_1.0.4-alpha.5_amd64.deb
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.5_amd64.deb
+# Добавить GPG-ключ репозитория
+curl -fsSL https://darkrain.github.io/mcp-bash-server/repo.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/mcp-bash-server.gpg
+
+# Добавить репозиторий
+echo "deb https://darkrain.github.io/mcp-bash-server stable main" | sudo tee /etc/apt/sources.list.d/mcp-bash-server.list
+
+# Установить
+sudo apt update && sudo apt install mcp-bash-server
 sudo systemctl enable --now mcp-bash-server
 ```
 
 ### Обновление
 
 ```bash
-# Скачать новую версию
-wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.5/mcp-bash-server_1.0.4-alpha.5_amd64.deb
+sudo apt update && sudo apt install --only-upgrade mcp-bash-server
+```
 
-sudo dpkg -i mcp-bash-server_1.0.4-alpha.5_amd64.deb
+### Через .deb файл
 
-# Или если нужно перезапустить вручную
-sudo systemctl restart mcp-bash-server
+```bash
+# Скачать и установить
+wget https://github.com/darkrain/mcp-bash-server/releases/download/v1.0.4-alpha.6/mcp-bash-server_1.0.4-alpha.6_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.4-alpha.6_amd64.deb
+sudo systemctl enable --now mcp-bash-server
 ```
 
 ## Конфигурация
@@ -61,6 +74,7 @@ allowed_commands = ["*"]
 # Или разрешить конкретные команды:
 # allowed_commands = ["ls", "cat", "ps", "df", "git"]
 timeout = 30
+sync_timeout = 5
 max_output_size = 1048576
 
 # Логирование всех выполненных команд (аналог bash history)
@@ -75,6 +89,12 @@ process_ttl = 60
 # Директория для хранения данных async-процессов (bbolt DB + логи вывода)
 # По умолчанию: /var/lib/mcp-bash-server
 # process_dir = "/var/lib/mcp-bash-server"
+
+# Максимальное время синхронного ожидания (в секундах)
+# Если команда не успевает за это время, она переводится в фоновое выполнение
+# Подходит для простых команд (ls, cat, grep) — 5 секунд более чем достаточно
+# По умолчанию: 5
+sync_timeout = 5
 
 [log]
 level = "info"
@@ -119,6 +139,7 @@ journalctl -u mcp-bash-server -f
 | `MCP_API_KEY` | API ключ |
 | `MCP_BASE_URL` | Базовый URL |
 | `MCP_BASH_TIMEOUT` | Таймаут команд (сек) |
+| `MCP_BASH_SYNC_TIMEOUT` | Макс. время синхронного ожидания (сек, по умолчанию 5) |
 | `MCP_PROCESS_TTL` | TTL процессов async (мин) |
 | `MCP_PROCESS_DIR` | Директория данных процессов |
 | `MCP_LOG_LEVEL` | Уровень логирования (debug/info/warn/error) |
@@ -290,13 +311,14 @@ curl -X POST http://localhost:8080/mcp/ \
 6. **Process persistence** — async-процессы выживают при обновлении сервиса (Setpgid + bbolt + файлы вывода)
 7. **Config preservation** — при обновлении DEB пакета пользовательский config.toml не перезаписывается
 8. **Timeout-to-async** — при таймауте синхронной команды процесс не убивается, а переводится в фоновое выполнение; агент получает process_id для проверки результата
+9. **Apt-репозиторий** — автоматическое обновление через `apt` с GitHub Pages
 
 ## Архитектуры
 
 | Архитектура | Бинарник | DEB пакет |
 |-------------|----------|-----------|
-| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.5_amd64.deb` |
-| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.5_arm64.deb` |
+| amd64 | `mcp-bash-server_amd64` | `mcp-bash-server_1.0.4-alpha.6_amd64.deb` |
+| arm64 | `mcp-bash-server_arm64` | `mcp-bash-server_1.0.4-alpha.6_arm64.deb` |
 
 Бинарники статически слинкованы (CGO_ENABLED=0) и работают без зависимостей от libc.
 

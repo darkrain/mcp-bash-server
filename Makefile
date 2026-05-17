@@ -171,15 +171,23 @@ uninstall: ## Uninstall binary (requires sudo)
 	@systemctl daemon-reload
 	@echo "$(GREEN)Uninstall complete$(NC)"
 
-apt-repo-init: ## Initialize local apt repo (requires reprepro)
+apt-repo-init: ## Initialize apt repo with gh-pages worktree (requires reprepro)
 	@echo "$(BLUE)Initializing apt repository...$(NC)"
+	@if [ ! -f $(APT_REPO_DIR)/.git ] && [ ! -d $(APT_REPO_DIR)/.git ]; then \
+		rm -rf $(APT_REPO_DIR); \
+		if git show-ref --verify --quiet refs/remotes/origin/$(APT_REPO_BRANCH); then \
+			git worktree add --track -b $(APT_REPO_BRANCH) $(APT_REPO_DIR) origin/$(APT_REPO_BRANCH); \
+		else \
+			git worktree add --orphan -b $(APT_REPO_BRANCH) $(APT_REPO_DIR); \
+		fi; \
+	fi
 	@mkdir -p $(APT_REPO_DIR)/conf
 	@echo 'Codename: stable' > $(APT_REPO_DIR)/conf/distributions
 	@echo 'Components: main' >> $(APT_REPO_DIR)/conf/distributions
 	@echo 'Architectures: amd64 arm64' >> $(APT_REPO_DIR)/conf/distributions
 	@echo 'SignWith: yes' >> $(APT_REPO_DIR)/conf/distributions
 	@echo "$(GREEN)Apt repo initialized at $(APT_REPO_DIR)$(NC)"
-	@echo "$(YELLOW)Create a GPG key first: gpg --full-generate-key$(NC)"
+	@echo "$(YELLOW)Create a GPG key first: gpg --batch --full-generate-key$(NC)"
 	@echo "$(YELLOW)Then export pubkey: gpg --export --armor > $(APT_REPO_DIR)/repo.gpg.key$(NC)"
 
 apt-repo-add: deb-all ## Build debs and add to local apt repo
@@ -191,15 +199,9 @@ apt-repo-add: deb-all ## Build debs and add to local apt repo
 
 apt-repo-push: ## Push apt repo to GitHub Pages
 	@echo "$(BLUE)Pushing apt repo to gh-pages branch...$(NC)"
-	@if git worktree list | grep -q '$(APT_REPO_DIR)'; then \
-		cd $(APT_REPO_DIR) && git add -A && git commit -m "apt repo: v$(VERSION)" && git push origin $(APT_REPO_BRANCH); \
-	else \
-		git worktree add --track -b $(APT_REPO_BRANCH) $(APT_REPO_DIR) origin/$(APT_REPO_BRANCH) 2>/dev/null || \
-		git worktree add $(APT_REPO_DIR) $(APT_REPO_BRANCH) 2>/dev/null || \
-		(echo "$(RED)Branch $(APT_REPO_BRANCH) not found. Create it first:$(NC)" && \
-		 echo "  git worktree add --orphan:gh-pages $(APT_REPO_DIR)" && exit 1); \
-		cd $(APT_REPO_DIR) && git add -A && git commit -m "apt repo: v$(VERSION)" && git push origin $(APT_REPO_BRANCH); \
-	fi
+	@cd $(APT_REPO_DIR) && git add -A && \
+		(git diff --cached --quiet && echo "$(YELLOW)No changes to push$(NC)") || \
+		(git commit -m "apt repo: v$(VERSION)" && git push origin $(APT_REPO_BRANCH))
 	@echo "$(GREEN)Apt repo pushed$(NC)"
 
 help: ## Show this help
