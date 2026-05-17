@@ -76,6 +76,118 @@ type BashOutput struct {
 	Duration int64  `json:"duration_ms" jsonschema:"execution duration in milliseconds"`
 }
 
+func effectiveSyncTimeout(cfg *config.Config, inputTimeout int, ctx context.Context) time.Duration {
+	bashTimeout := time.Duration(cfg.Bash.Timeout) * time.Second
+	if inputTimeout > 0 {
+		bashTimeout = time.Duration(inputTimeout) * time.Second
+	}
+
+	syncTimeout := time.Duration(cfg.Bash.SyncTimeout) * time.Second
+	if syncTimeout <= 0 {
+		return bashTimeout
+	}
+
+	effective := syncTimeout
+	if bashTimeout > 0 && bashTimeout < effective {
+		effective = bashTimeout
+	}
+
+	if deadline, ok := ctx.Deadline(); ok {
+		ctxTimeout := time.Until(deadline) - 3*time.Second
+		if ctxTimeout > 0 && ctxTimeout < effective {
+			effective = ctxTimeout
+		}
+	}
+
+	return effective
+}
+
+func transferToAsync(cmd *exec.Cmd, cmdStr string, cwd string, stdoutBuf *bytes.Buffer, stderrBuf *bytes.Buffer, registry *ProcessRegistry, cfg *config.Config, logger *slog.Logger, start time.Time, timeoutDesc string) (*mcp.CallToolResult, BashOutput, error) {
+	asyncProcess := registry.NewProcess(cmdStr, cwd)
+
+	outFile, fileErr := registry.CreateOutputFile(asyncProcess.ID)
+	if fileErr == nil {
+		outFile.Write(stdoutBuf.Bytes())
+		outFile.Write(stderrBuf.Bytes())
+		outFile.Close()
+	}
+
+	registry.Update(asyncProcess.ID, func(proc *Process) {
+		proc.PID = cmd.Process.Pid
+	})
+
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- cmd.Wait()
+	}()
+
+	go func() {
+		waitErr := <-doneCh
+		now := time.Now()
+		exitCode := 0
+		status := StatusCompleted
+		if waitErr != nil {
+			if exitErr, ok := waitErr.(*exec.ExitError); ok {
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+					if ws.Signaled() {
+						exitCode = -1
+						status = StatusKilled
+					} else {
+						exitCode = ws.ExitStatus()
+						status = StatusFailed
+					}
+				} else {
+					exitCode = exitErr.ExitCode()
+					status = StatusFailed
+				}
+			} else {
+				exitCode = -1
+				status = StatusFailed
+			}
+		}
+		registry.Update(asyncProcess.ID, func(proc *Process) {
+			proc.Status = status
+			proc.ExitCode = exitCode
+			proc.EndedAt = &now
+			proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
+		})
+		if cfg.Bash.LogCommands {
+			logger.Info("async timeout process completed", "process_id", asyncProcess.ID, "pid", cmd.Process.Pid, "status", string(status), "exit_code", exitCode)
+		}
+	}()
+
+	if cfg.Bash.LogCommands {
+		logger.Info("command timed out, transferred to async", "command", redactCommand(cmdStr), "process_id", asyncProcess.ID, "reason", timeoutDesc)
+	}
+
+	stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
+	if !utf8.ValidString(stdout) {
+		stdout = "[binary output truncated]"
+	}
+	if !utf8.ValidString(stderr) {
+		stderr = "[binary output truncated]"
+	}
+
+	msg := fmt.Sprintf("Command is still running (%s). It has been moved to background execution.\nProcess ID: %s\n\nThe command has NOT failed — it is still executing in the background.\nUse process_status to check progress, process_output to get results when it finishes, process_kill to terminate it.", timeoutDesc, asyncProcess.ID)
+	if stdout != "" {
+		msg += fmt.Sprintf("\n\n=== STDOUT (so far) ===\n%s", stdout)
+	}
+	if stderr != "" {
+		msg += fmt.Sprintf("\n\n=== STDERR (so far) ===\n%s", stderr)
+	}
+
+	return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: msg},
+			},
+		}, BashOutput{
+			Stdout:   stdout,
+			Stderr:   stderr,
+			ExitCode: -1,
+			Duration: time.Since(start).Milliseconds(),
+		}, nil
+}
+
 func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp.Server, *sysinfo.SystemInfo, *ProcessRegistry, error) {
 	si := sysinfo.GetSystemInfo()
 
@@ -124,11 +236,6 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 			}, BashOutput{}, nil
 		}
 
-		timeout := cfg.Bash.Timeout
-		if input.Timeout > 0 {
-			timeout = input.Timeout
-		}
-
 		var args []string
 		if len(input.Args) > 0 {
 			args = input.Args
@@ -152,18 +259,12 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}
 
 		if cfg.Bash.LogCommands {
-			logger.Info("command started", "command", redactCommand(cmdStr), "cwd", input.Cwd, "timeout", timeout)
+			logger.Info("command started", "command", redactCommand(cmdStr), "cwd", input.Cwd, "timeout", input.Timeout)
 		}
 
 		var stdoutBuf, stderrBuf bytes.Buffer
 
-		timeoutCh := make(chan struct{})
-		if timeout > 0 {
-			go func() {
-				time.Sleep(time.Duration(timeout) * time.Second)
-				close(timeoutCh)
-			}()
-		}
+		syncTimeout := effectiveSyncTimeout(cfg, input.Timeout, ctx)
 
 		cmd := exec.Command(input.Command, args...)
 		if input.Cwd != "" {
@@ -171,165 +272,105 @@ func NewMCPServer(cfg *config.Config, logger *slog.Logger, version string) (*mcp
 		}
 		cmd.Stdout = &stdoutBuf
 		cmd.Stderr = &stderrBuf
-		if timeout > 0 {
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-		var err error
-		var asyncProcess *Process
-		if startErr := cmd.Start(); startErr == nil {
-			done := make(chan error, 1)
-			go func() { done <- cmd.Wait() }()
-			select {
-			case err = <-done:
-			case <-timeoutCh:
-				asyncProcess = registry.NewProcess(cmdStr, input.Cwd)
+		if startErr := cmd.Start(); startErr != nil {
+			err := startErr
+			exitCode := -1
+			duration := time.Since(start).Milliseconds()
 
-				outFile, fileErr := registry.CreateOutputFile(asyncProcess.ID)
-				if fileErr == nil {
-					outFile.Write(stdoutBuf.Bytes())
-					outFile.Write(stderrBuf.Bytes())
-					outFile.Close()
-				}
-
-				registry.Update(asyncProcess.ID, func(proc *Process) {
-					proc.PID = cmd.Process.Pid
-				})
-
-				go func() {
-					waitErr := <-done
-					now := time.Now()
-					exitCode := 0
-					status := StatusCompleted
-					if waitErr != nil {
-						if exitErr, ok := waitErr.(*exec.ExitError); ok {
-							if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-								if ws.Signaled() {
-									exitCode = -1
-									status = StatusKilled
-								} else {
-									exitCode = ws.ExitStatus()
-									status = StatusFailed
-								}
-							} else {
-								exitCode = exitErr.ExitCode()
-								status = StatusFailed
-							}
-						} else {
-							exitCode = -1
-							status = StatusFailed
-						}
-					}
-					registry.Update(asyncProcess.ID, func(proc *Process) {
-						proc.Status = status
-						proc.ExitCode = exitCode
-						proc.EndedAt = &now
-						proc.Duration = now.Sub(proc.StartedAt).Milliseconds()
-					})
-					if cfg.Bash.LogCommands {
-						logger.Info("async timeout process completed", "process_id", asyncProcess.ID, "pid", cmd.Process.Pid, "status", string(status), "exit_code", exitCode)
-					}
-				}()
-
-				if cfg.Bash.LogCommands {
-					logger.Info("command timed out, transferred to async", "command", redactCommand(cmdStr), "process_id", asyncProcess.ID, "timeout", timeout)
-				}
-
-				stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
-				if !utf8.ValidString(stdout) {
-					stdout = "[binary output truncated]"
-				}
-				if !utf8.ValidString(stderr) {
-					stderr = "[binary output truncated]"
-				}
-
-				msg := fmt.Sprintf("Command is still running after %d seconds (timeout reached). It has been moved to background execution.\nProcess ID: %s\n\nThe command has NOT failed — it is still executing in the background.\nUse process_status to check progress, process_output to get results when it finishes, process_kill to terminate it.", timeout, asyncProcess.ID)
-				if stdout != "" {
-					msg += fmt.Sprintf("\n\n=== STDOUT (so far) ===\n%s", stdout)
-				}
-				if stderr != "" {
-					msg += fmt.Sprintf("\n\n=== STDERR (so far) ===\n%s", stderr)
-				}
-
-				return &mcp.CallToolResult{
-						Content: []mcp.Content{
-							&mcp.TextContent{Text: msg},
-						},
-					}, BashOutput{
-						Stdout:   stdout,
-						Stderr:   stderr,
-						ExitCode: -1,
-						Duration: time.Since(start).Milliseconds(),
-					}, nil
+			if cfg.Bash.LogCommands {
+				logger.Info("command failed to start", "command", redactCommand(cmdStr), "error", err, "duration_ms", duration)
 			}
-		} else {
-			err = startErr
-		}
-		duration := time.Since(start).Milliseconds()
 
-		exitCode := 0
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-					exitCode = status.ExitStatus()
-				}
-			} else {
-				exitCode = -1
-			}
-		}
-
-		if cfg.Bash.LogCommands {
-			logger.Info("command completed", "command", redactCommand(cmdStr), "exit_code", exitCode, "duration_ms", duration)
-		}
-
-		stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
-
-		if !utf8.ValidString(stdout) {
-			stdout = "[binary output truncated]"
-		}
-		if !utf8.ValidString(stderr) {
-			stderr = "[binary output truncated]"
-		}
-
-		output := BashOutput{
-			Stdout:   stdout,
-			Stderr:   stderr,
-			ExitCode: exitCode,
-			Duration: duration,
-		}
-
-		if err != nil && exitCode == -1 {
 			return &mcp.CallToolResult{
 				IsError: true,
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("Execution error: %v\n\nStdout:\n%s\n\nStderr:\n%s", err, stdout, stderr)},
+					&mcp.TextContent{Text: fmt.Sprintf("Execution error: %v", err)},
 				},
+			}, BashOutput{ExitCode: exitCode, Duration: duration}, nil
+		}
+
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+
+		syncTimer := time.NewTimer(syncTimeout)
+		defer syncTimer.Stop()
+
+		select {
+		case err := <-done:
+			duration := time.Since(start).Milliseconds()
+
+			exitCode := 0
+			if err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+					if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+						exitCode = status.ExitStatus()
+					}
+				} else {
+					exitCode = -1
+				}
+			}
+
+			if cfg.Bash.LogCommands {
+				logger.Info("command completed", "command", redactCommand(cmdStr), "exit_code", exitCode, "duration_ms", duration)
+			}
+
+			stdout, stderr := truncateOutputs(stdoutBuf.String(), stderrBuf.String(), cfg.Bash.MaxOutputSize)
+
+			if !utf8.ValidString(stdout) {
+				stdout = "[binary output truncated]"
+			}
+			if !utf8.ValidString(stderr) {
+				stderr = "[binary output truncated]"
+			}
+
+			output := BashOutput{
+				Stdout:   stdout,
+				Stderr:   stderr,
+				ExitCode: exitCode,
+				Duration: duration,
+			}
+
+			if err != nil && exitCode == -1 {
+				return &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{
+						&mcp.TextContent{Text: fmt.Sprintf("Execution error: %v\n\nStdout:\n%s\n\nStderr:\n%s", err, stdout, stderr)},
+					},
+				}, output, nil
+			}
+
+			var content []mcp.Content
+
+			if stdout != "" {
+				content = append(content, &mcp.TextContent{
+					Text: fmt.Sprintf("=== STDOUT ===\n%s", stdout),
+				})
+			}
+			if stderr != "" {
+				content = append(content, &mcp.TextContent{
+					Text: fmt.Sprintf("=== STDERR ===\n%s", stderr),
+				})
+			}
+
+			if len(content) == 0 {
+				content = append(content, &mcp.TextContent{
+					Text: fmt.Sprintf("Command completed with exit code %d in %d ms", exitCode, duration),
+				})
+			}
+
+			return &mcp.CallToolResult{
+				Content: content,
 			}, output, nil
-		}
 
-		var content []mcp.Content
+		case <-syncTimer.C:
+			return transferToAsync(cmd, cmdStr, input.Cwd, &stdoutBuf, &stderrBuf, registry, cfg, logger, start, fmt.Sprintf("sync timeout of %v reached", syncTimeout))
 
-		if stdout != "" {
-			content = append(content, &mcp.TextContent{
-				Text: fmt.Sprintf("=== STDOUT ===\n%s", stdout),
-			})
+		case <-ctx.Done():
+			return transferToAsync(cmd, cmdStr, input.Cwd, &stdoutBuf, &stderrBuf, registry, cfg, logger, start, "client disconnected")
 		}
-		if stderr != "" {
-			content = append(content, &mcp.TextContent{
-				Text: fmt.Sprintf("=== STDERR ===\n%s", stderr),
-			})
-		}
-
-		if len(content) == 0 {
-			content = append(content, &mcp.TextContent{
-				Text: fmt.Sprintf("Command completed with exit code %d in %d ms", exitCode, duration),
-			})
-		}
-
-		return &mcp.CallToolResult{
-			Content: content,
-		}, output, nil
 	})
 
 	mcp.AddTool(mcpServer, &mcp.Tool{

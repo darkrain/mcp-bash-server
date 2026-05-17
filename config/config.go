@@ -23,6 +23,7 @@ type ServerConfig struct {
 type BashConfig struct {
 	AllowedCommands []string `toml:"allowed_commands"`
 	Timeout         int      `toml:"timeout"`
+	SyncTimeout     int      `toml:"sync_timeout"`
 	MaxOutputSize   int      `toml:"max_output_size"`
 	LogCommands     bool     `toml:"log_commands"`
 	ProcessTTL      int      `toml:"process_ttl"`
@@ -46,6 +47,7 @@ func DefaultConfig() *Config {
 		Bash: BashConfig{
 			AllowedCommands: []string{},
 			Timeout:         30,
+			SyncTimeout:     5,
 			MaxOutputSize:   1048576,
 			LogCommands:     true,
 			ProcessTTL:      60,
@@ -91,6 +93,12 @@ func Load(path string) (*Config, error) {
 			cfg.Bash.Timeout = t
 		}
 	}
+	if syncTimeout := os.Getenv("MCP_BASH_SYNC_TIMEOUT"); syncTimeout != "" {
+		var t int
+		if _, err := fmt.Sscanf(syncTimeout, "%d", &t); err == nil {
+			cfg.Bash.SyncTimeout = t
+		}
+	}
 	if processTTL := os.Getenv("MCP_PROCESS_TTL"); processTTL != "" {
 		var t int
 		if _, err := fmt.Sscanf(processTTL, "%d", &t); err == nil {
@@ -123,6 +131,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Bash.Timeout < 0 {
 		return fmt.Errorf("bash timeout cannot be negative")
+	}
+	if c.Bash.SyncTimeout < 0 {
+		return fmt.Errorf("bash sync_timeout cannot be negative")
 	}
 	if c.Bash.MaxOutputSize < 0 {
 		return fmt.Errorf("bash max_output_size cannot be negative")
