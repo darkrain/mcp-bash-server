@@ -1,16 +1,16 @@
 Package: mcp-bash-server
-Version: 1.0.4-alpha.7
+Version: 1.0.4-alpha.8
 Architecture: amd64
 Depends: systemd
 Maintainer: MCP Bash Server Team
 Priority: optional
 Section: net
-Filename: pool/main/m/mcp-bash-server/mcp-bash-server_1.0.4-alpha.7_amd64.deb
-Size: 2687036
-SHA512: adc61de3c1a680b328540b1baa12b41857c34fb54eed1637b1445ddf05de399a5e9a47c2081591c088e49ec38d502f7f27f25c77d738e1f75b93cbf9d479107f
-SHA256: d2f1dccf2e7c580a95dfb0c46767a38f69ad38078f860c696fa1365ddd5704a0
-SHA1: 1a7553cf40c09b004d136a86ad81e6db2222268d
-MD5sum: 3202add7fcbb813d7d1f62d6c5e14f05
+Filename: pool/main/m/mcp-bash-server/mcp-bash-server_1.0.4-alpha.8_amd64.deb
+Size: 2687440
+SHA512: d235bf9ebb0e79b3789feecf2d844720f953477baf8e711dc31195439a628b88d9b2d32572d0e17d8944e6df93aba7859d3b694a46f0ef85ef702af605bf982d
+SHA256: 32aa295f683a2e9e2902873a8f034289dc70b2b9a60acee7dc5cb9e583e546f0
+SHA1: c28a58cdddb24b22009ae5d17157ac7e41cde67e
+MD5sum: ee9b19385e051154c301d1fa2a1cbd92
 Description: MCP server for executing bash commands via HTTP transport
  MCP Bash Server is a Model Context Protocol (MCP) server that allows
  AI agents to execute bash commands on a remote server through HTTP.
