@@ -1,3 +1,30 @@
+# Release v1.0.4-alpha.8
+
+## Fix: writable process registry with sudo enabled
+
+The sudo systemd override introduced in `v1.0.4-alpha.7` cleared
+`ProtectSystem` and `ReadWritePaths`. In practice this could leave the base
+unit's `ProtectSystem=strict` active while removing its writable path
+exceptions, causing bbolt startup to fail with `read-only file system` for
+`processes.db`.
+
+**Fix:** the sudo override now explicitly uses `ProtectSystem=full` and keeps
+`/tmp` and `/var/lib/mcp-bash-server` in `ReadWritePaths`.
+
+Debian packages are now built with root ownership metadata so installed files
+have the expected `root:root` owner regardless of the user running the build.
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4-alpha.8_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4-alpha.8_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.7
 
 ## Security Hardening

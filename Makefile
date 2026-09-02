@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.7
+VERSION := 1.0.4-alpha.8
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 
@@ -141,7 +141,7 @@ define build-deb
 	sed -i "s/ARCH/$1/g" $(BUILD_DIR)/deb-$1/DEBIAN/control; \
 	sed -i "s/INSTALLED_SIZE/$$INSTALLED_SIZE/g" $(BUILD_DIR)/deb-$1/DEBIAN/control
 
-	@dpkg-deb --build $(BUILD_DIR)/deb-$1 $(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$1.deb
+	@dpkg-deb --root-owner-group --build $(BUILD_DIR)/deb-$1 $(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$1.deb
 	@echo "$(GREEN)Package: $(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$1.deb$(NC)"
 endef
 
