@@ -30,6 +30,7 @@ Thumbs.db
 # Go
 vendor/
 .gocache/
+.apt-repo/
 go.work
 go.work.sum
 .agents

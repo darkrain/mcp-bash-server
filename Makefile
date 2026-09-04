@@ -31,7 +31,7 @@ RED := \033[31m
 NC := \033[0m
 
 # APT repository settings
-APT_REPO_DIR := $(BUILD_DIR)/apt-repo
+APT_REPO_DIR := .apt-repo
 APT_REPO_BRANCH := gh-pages
 APT_REPO_URL := https://darkrain.github.io/mcp-bash-server
 
@@ -192,7 +192,9 @@ apt-repo-init: ## Initialize apt repo with gh-pages worktree (requires reprepro)
 	@echo "$(BLUE)Initializing apt repository...$(NC)"
 	@if [ ! -f $(APT_REPO_DIR)/.git ] && [ ! -d $(APT_REPO_DIR)/.git ]; then \
 		rm -rf $(APT_REPO_DIR); \
-		if git show-ref --verify --quiet refs/remotes/origin/$(APT_REPO_BRANCH); then \
+		if git show-ref --verify --quiet refs/heads/$(APT_REPO_BRANCH); then \
+			git worktree add $(APT_REPO_DIR) $(APT_REPO_BRANCH); \
+		elif git show-ref --verify --quiet refs/remotes/origin/$(APT_REPO_BRANCH); then \
 			git worktree add --track -b $(APT_REPO_BRANCH) $(APT_REPO_DIR) origin/$(APT_REPO_BRANCH); \
 		else \
 			git worktree add --orphan -b $(APT_REPO_BRANCH) $(APT_REPO_DIR); \
