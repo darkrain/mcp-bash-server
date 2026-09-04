@@ -1,21 +1,21 @@
 Package: mcp-bash-server
-Version: 1.0.4-alpha.8
+Version: 1.0.5
 Architecture: arm64
 Depends: systemd
 Maintainer: MCP Bash Server Team
 Priority: optional
 Section: net
-Filename: pool/main/m/mcp-bash-server/mcp-bash-server_1.0.4-alpha.8_arm64.deb
-Size: 2287636
-SHA512: 3209beb0d645c0a3eed226eacf760b8ce9223a2b1361dd8c681bc6021681265fa4ed03a3dff06862e89a735b411d313a1c67f18219dd9ca763ba9a8f5176e040
-SHA256: 87677af9c9dd7e7636acdfeb9043dc4f468e77cae7b750080592f4a4d735bb03
-SHA1: b1d3955bd40cc563ba36bc39e30782b430b6f89a
-MD5sum: 2961595b29eddefebcf8c8f35c47dc0c
+Filename: pool/main/m/mcp-bash-server/mcp-bash-server_1.0.5_arm64.deb
+Size: 2288320
+SHA512: e72541d6b91613980a5ae85bb512a268f2d582154cc136baec9739759216d4b08ea0eae126dec26351790dc9266656f29956c99421957ca82dd519a4806039fa
+SHA256: 28e775040a7fa6fc70add75882e50cf21d3893b53eb40139552f3cae57ddc0be
+SHA1: eb7a37ac1a7e801892fc71047c93d60be286c729
+MD5sum: 7857d50264223802a2bb5f6946c53ab2
 Description: MCP server for executing bash commands via HTTP transport
  MCP Bash Server is a Model Context Protocol (MCP) server that allows
  AI agents to execute bash commands on a remote server through HTTP.
  It uses the official go-sdk for MCP and supports configurable command
  allowlists, timeouts, and API key authentication.
-Installed-Size: 7848
-Homepage: https://github.com/your-org/mcp-bash-server
+Installed-Size: 7852
+Homepage: https://github.com/darkrain/mcp-bash-server
 
