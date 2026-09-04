@@ -1,11 +1,15 @@
-# Release v1.0.5
+# Release v1.0.6
 
 ## Stable systemd sudo configuration
 
 This release makes the working manual systemd fix part of the Debian package.
 
-The stable version advances to `1.0.5` so Debian/Ubuntu package managers
+The stable version advances past the legacy alpha series so Debian/Ubuntu package managers
 correctly upgrade installations of the legacy `1.0.4-alpha.*` packages.
+
+The Debian package now declares `sudo` and `openssl` dependencies, so a clean
+minimal Ubuntu installation can enable managed sudo access and generate its
+initial API key without manual prerequisite installation.
 
 - The sudo drop-in now explicitly disables `ProtectSystem`,
   `NoNewPrivileges`, and the other base-unit sandbox restrictions. This lets
@@ -25,8 +29,8 @@ correctly upgrade installations of the legacy `1.0.4-alpha.*` packages.
 |------|-------------|
 | `mcp-bash-server_amd64` | amd64 static binary |
 | `mcp-bash-server_arm64` | arm64 static binary |
-| `mcp-bash-server_1.0.5_amd64.deb` | Debian package for amd64 |
-| `mcp-bash-server_1.0.5_arm64.deb` | Debian package for arm64 |
+| `mcp-bash-server_1.0.6_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.6_arm64.deb` | Debian package for arm64 |
 
 ---
 

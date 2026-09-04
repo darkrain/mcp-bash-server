@@ -3,7 +3,7 @@ Version: VERSION
 Section: net
 Priority: optional
 Architecture: ARCH
-Depends: systemd
+Depends: systemd, sudo, openssl
 Maintainer: MCP Bash Server Team
 Description: MCP server for executing bash commands via HTTP transport
  MCP Bash Server is a Model Context Protocol (MCP) server that allows
