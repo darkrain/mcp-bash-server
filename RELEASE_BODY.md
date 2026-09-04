@@ -1,6 +1,9 @@
-## mcp-bash-server v1.0.4
+## mcp-bash-server v1.0.5
 
 Stable release of the async process registry and security hardening series.
+
+The version is `1.0.5` so APT correctly upgrades legacy
+`1.0.4-alpha.*` installations.
 
 ### Fixed
 
@@ -13,12 +16,12 @@ Stable release of the async process registry and security hardening series.
 ### Install on Debian/Ubuntu
 
 ```bash
-sudo dpkg -i mcp-bash-server_1.0.4_amd64.deb
+sudo dpkg -i mcp-bash-server_1.0.5_amd64.deb
 sudo mcp-bash-server-configure sudo  # only when full root access is required
 sudo systemctl enable --now mcp-bash-server
 ```
 
-ARM64 systems should use `mcp-bash-server_1.0.4_arm64.deb`.
+ARM64 systems should use `mcp-bash-server_1.0.5_arm64.deb`.
 
 Existing `/etc/mcp-bash-server/config.toml` settings are preserved during upgrades.
 
@@ -42,6 +45,6 @@ ReadWritePaths=
 
 - `mcp-bash-server_amd64`
 - `mcp-bash-server_arm64`
-- `mcp-bash-server_1.0.4_amd64.deb`
-- `mcp-bash-server_1.0.4_arm64.deb`
+- `mcp-bash-server_1.0.5_amd64.deb`
+- `mcp-bash-server_1.0.5_arm64.deb`
 - `SHA256SUMS`

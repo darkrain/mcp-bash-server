@@ -1,8 +1,11 @@
-# Release v1.0.4
+# Release v1.0.5
 
 ## Stable systemd sudo configuration
 
 This release makes the working manual systemd fix part of the Debian package.
+
+The stable version advances to `1.0.5` so Debian/Ubuntu package managers
+correctly upgrade installations of the legacy `1.0.4-alpha.*` packages.
 
 - The sudo drop-in now explicitly disables `ProtectSystem`,
   `NoNewPrivileges`, and the other base-unit sandbox restrictions. This lets
@@ -22,8 +25,8 @@ This release makes the working manual systemd fix part of the Debian package.
 |------|-------------|
 | `mcp-bash-server_amd64` | amd64 static binary |
 | `mcp-bash-server_arm64` | arm64 static binary |
-| `mcp-bash-server_1.0.4_amd64.deb` | Debian package for amd64 |
-| `mcp-bash-server_1.0.4_arm64.deb` | Debian package for arm64 |
+| `mcp-bash-server_1.0.5_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.5_arm64.deb` | Debian package for arm64 |
 
 ---
 
