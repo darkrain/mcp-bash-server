@@ -11,6 +11,9 @@ The Debian package now declares `sudo` and `openssl` dependencies, so a clean
 minimal Ubuntu installation can enable managed sudo access and generate its
 initial API key without manual prerequisite installation.
 
+Package configuration also tolerates chroot/container environments where
+systemd is installed but not running as PID 1.
+
 - The sudo drop-in now explicitly disables `ProtectSystem`,
   `NoNewPrivileges`, and the other base-unit sandbox restrictions. This lets
   sudo write to `/etc`, `/opt`, `/usr`, and custom `process_dir` locations.

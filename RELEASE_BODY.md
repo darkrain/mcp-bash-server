@@ -13,6 +13,7 @@ The stable version sorts newer in APT than legacy
 - The systemd sudo override is shipped once and shared by both the Debian `postinst` and `mcp-bash-server-configure`, preventing future drift.
 - A stale sandbox override is removed when sudo is not enabled.
 - The Debian package installs required `sudo` and `openssl` prerequisites on a clean system.
+- Package installation no longer fails in containers or chroots where systemd is not PID 1.
 
 ### Install on Debian/Ubuntu
 

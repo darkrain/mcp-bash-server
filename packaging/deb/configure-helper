@@ -18,7 +18,7 @@ enable_sudo() {
     fi
     install -d -m 755 "$OVERRIDE_DIR"
     install -o root -g root -m 644 "$OVERRIDE_SOURCE" "$OVERRIDE_FILE"
-    systemctl daemon-reload
+    systemctl daemon-reload || true
     echo "Done. Sudo enabled, sandbox disabled."
     echo "Restart service: sudo systemctl restart mcp-bash-server"
 }
@@ -30,7 +30,7 @@ disable_sudo() {
     if [ -d "$OVERRIDE_DIR" ] && [ -z "$(ls -A "$OVERRIDE_DIR" 2>/dev/null)" ]; then
         rmdir "$OVERRIDE_DIR" 2>/dev/null || true
     fi
-    systemctl daemon-reload
+    systemctl daemon-reload || true
     echo "Done. Sudo removed, sandbox enabled."
     echo "Restart service: sudo systemctl restart mcp-bash-server"
 }

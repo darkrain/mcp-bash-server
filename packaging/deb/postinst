@@ -129,7 +129,7 @@ else
 fi
 
 # Reload systemd
-systemctl daemon-reload
+systemctl daemon-reload || true
 
 echo ""
 echo "mcp-bash-server installed successfully!"
