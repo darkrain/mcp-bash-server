@@ -3,7 +3,7 @@
 
 BINARY_NAME := mcp-bash-server
 PACKAGE_NAME := mcp-bash-server
-VERSION := 1.0.4-alpha.8
+VERSION := 1.0.4
 MAINTAINER := darkrain
 DESCRIPTION := MCP server for executing bash commands via HTTP transport
 
@@ -35,7 +35,7 @@ APT_REPO_DIR := $(BUILD_DIR)/apt-repo
 APT_REPO_BRANCH := gh-pages
 APT_REPO_URL := https://darkrain.github.io/mcp-bash-server
 
-.PHONY: all build build-all test clean deb-all release lint run apt-repo-init apt-repo-add apt-repo-push
+.PHONY: all build build-all test test-packaging clean deb-all release lint run apt-repo-init apt-repo-add apt-repo-push
 
 all: build
 
@@ -61,10 +61,13 @@ build-arm64: ## Build arm64 binary (cross-compile if needed)
 
 build-all: build-amd64 build-arm64 ## Build for all architectures
 
-test: ## Run all tests including integration
+test: test-packaging ## Run all tests including integration
 	@echo "$(BLUE)Running tests...$(NC)"
 	$(GOTEST) -v -timeout 60s ./...
 	@echo "$(GREEN)Tests complete$(NC)"
+
+test-packaging: ## Validate packaged systemd sudo override
+	bash packaging/tests/systemd-override.sh
 
 lint: ## Run linter
 	@echo "$(BLUE)Running linter...$(NC)"
@@ -106,6 +109,7 @@ define build-deb
 	@mkdir -p $(BUILD_DIR)/deb-$1/var/lib/$(BINARY_NAME)/output
 	@mkdir -p $(BUILD_DIR)/deb-$1/lib/systemd/system
 	@mkdir -p $(BUILD_DIR)/deb-$1/usr/share/doc/$(BINARY_NAME)
+	@mkdir -p $(BUILD_DIR)/deb-$1/usr/share/$(BINARY_NAME)
 
 	@cp $2 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
 	@chmod 755 $(BUILD_DIR)/deb-$1/usr/bin/$(BINARY_NAME)
@@ -118,6 +122,8 @@ define build-deb
 
 	@cp packaging/systemd/$(BINARY_NAME).service $(BUILD_DIR)/deb-$1/lib/systemd/system/
 	@chmod 644 $(BUILD_DIR)/deb-$1/lib/systemd/system/$(BINARY_NAME).service
+	@cp packaging/systemd/sudo-override.conf $(BUILD_DIR)/deb-$1/usr/share/$(BINARY_NAME)/sudo-override.conf
+	@chmod 644 $(BUILD_DIR)/deb-$1/usr/share/$(BINARY_NAME)/sudo-override.conf
 
 	@echo "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/" > $(BUILD_DIR)/deb-$1/usr/share/doc/$(BINARY_NAME)/copyright
 	@echo "Upstream-Name: $(PACKAGE_NAME)" >> $(BUILD_DIR)/deb-$1/usr/share/doc/$(BINARY_NAME)/copyright
@@ -153,6 +159,13 @@ release: clean test build-all deb-all ## Create release artifacts
 	@cp $(BUILD_DIR)/$(BINARY_NAME)_$(ARCH_ARM64) $(RELEASE_DIR)/
 	@cp $(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$(ARCH_AMD64).deb $(RELEASE_DIR)/
 	@cp $(BUILD_DIR)/$(PACKAGE_NAME)_$(VERSION)_$(ARCH_ARM64).deb $(RELEASE_DIR)/
+	@cp RELEASE_BODY.md $(RELEASE_DIR)/RELEASE_BODY.md
+	@cd $(RELEASE_DIR) && sha256sum \
+		$(BINARY_NAME)_$(ARCH_AMD64) \
+		$(BINARY_NAME)_$(ARCH_ARM64) \
+		$(PACKAGE_NAME)_$(VERSION)_$(ARCH_AMD64).deb \
+		$(PACKAGE_NAME)_$(VERSION)_$(ARCH_ARM64).deb \
+		> SHA256SUMS
 	@echo "$(GREEN)Release artifacts:$(NC)"
 	@ls -lh $(RELEASE_DIR)/
 

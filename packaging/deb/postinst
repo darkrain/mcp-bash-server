@@ -63,6 +63,7 @@ chmod 700 "$PROCESS_DIR"/output
 # Ask about sudo for mcp user (only on first install, interactive)
 OVERRIDE_DIR=/etc/systemd/system/mcp-bash-server.service.d
 OVERRIDE_FILE="$OVERRIDE_DIR/sudo-override.conf"
+OVERRIDE_SOURCE=/usr/share/mcp-bash-server/sudo-override.conf
 SUDOERS_FILE=/etc/sudoers.d/mcp
 
 setup_sudo() {
@@ -95,39 +96,30 @@ setup_sudo() {
     done
 }
 
-if setup_sudo; then
-    # Grant sudo
+enable_sudo() {
     echo "mcp ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_FILE"
     chmod 440 "$SUDOERS_FILE"
     chown root:root "$SUDOERS_FILE"
 
-    # Disable systemd sandboxing via override (not modifying the packaged unit)
-    mkdir -p "$OVERRIDE_DIR"
-    cat > "$OVERRIDE_FILE" <<'EOF'
-# Sudo access requires disabling some systemd security restrictions
-[Service]
-NoNewPrivileges=
-ProtectSystem=full
-ProtectHome=
-ReadWritePaths=/tmp /var/lib/mcp-bash-server
-PrivateTmp=
-ProtectKernelTunables=
-ProtectKernelModules=
-ProtectControlGroups=
-RestrictSUIDSGID=
-RestrictRealtime=
-RestrictNamespaces=
-LockPersonality=
-MemoryDenyWriteExecute=
-SystemCallFilter=
-SystemCallErrorNumber=
-EOF
+    if [ ! -f "$OVERRIDE_SOURCE" ]; then
+        echo "Missing packaged systemd override: $OVERRIDE_SOURCE" >&2
+        exit 1
+    fi
+    install -d -m 755 "$OVERRIDE_DIR"
+    install -o root -g root -m 644 "$OVERRIDE_SOURCE" "$OVERRIDE_FILE"
+}
+
+if [ -f "$SUDOERS_FILE" ]; then
+    # Package upgrades must preserve an explicitly enabled sudo setup and
+    # refresh old/broken overrides from alpha releases.
+    echo "Existing sudo access found — preserving it and refreshing the systemd override."
+    enable_sudo
+    echo "Sudo access preserved."
+elif setup_sudo; then
+    enable_sudo
     echo "Sudo access granted. Systemd sandboxing disabled via override."
 else
-    # Remove sudo if it was previously granted
-    rm -f "$SUDOERS_FILE" 2>/dev/null || true
-
-    # Remove sandbox override if it existed
+    # No sudoers rule means a stale override must not disable hardening.
     rm -f "$OVERRIDE_FILE" 2>/dev/null || true
     if [ -d "$OVERRIDE_DIR" ] && [ -z "$(ls -A "$OVERRIDE_DIR" 2>/dev/null)" ]; then
         rmdir "$OVERRIDE_DIR" 2>/dev/null || true

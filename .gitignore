@@ -29,6 +29,7 @@ Thumbs.db
 
 # Go
 vendor/
+.gocache/
 go.work
 go.work.sum
 .agents

@@ -1,3 +1,32 @@
+# Release v1.0.4
+
+## Stable systemd sudo configuration
+
+This release makes the working manual systemd fix part of the Debian package.
+
+- The sudo drop-in now explicitly disables `ProtectSystem`,
+  `NoNewPrivileges`, and the other base-unit sandbox restrictions. This lets
+  sudo write to `/etc`, `/opt`, `/usr`, and custom `process_dir` locations.
+- The drop-in is shipped as a single package file and reused by both `postinst`
+  and `mcp-bash-server-configure`, preventing the two installers from drifting.
+- Package upgrades preserve an existing sudo setup and replace stale alpha
+  overrides with the corrected version.
+- A stale drop-in is removed when no sudoers rule exists, restoring the secure
+  default sandbox.
+- Packaging tests verify that no read-only filesystem restriction remains in
+  sudo mode.
+
+## Artifacts
+
+| File | Description |
+|------|-------------|
+| `mcp-bash-server_amd64` | amd64 static binary |
+| `mcp-bash-server_arm64` | arm64 static binary |
+| `mcp-bash-server_1.0.4_amd64.deb` | Debian package for amd64 |
+| `mcp-bash-server_1.0.4_arm64.deb` | Debian package for arm64 |
+
+---
+
 # Release v1.0.4-alpha.8
 
 ## Fix: writable process registry with sudo enabled

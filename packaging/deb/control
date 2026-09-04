@@ -11,4 +11,4 @@ Description: MCP server for executing bash commands via HTTP transport
  It uses the official go-sdk for MCP and supports configurable command
  allowlists, timeouts, and API key authentication.
 Installed-Size: INSTALLED_SIZE
-Homepage: https://github.com/your-org/mcp-bash-server
+Homepage: https://github.com/darkrain/mcp-bash-server

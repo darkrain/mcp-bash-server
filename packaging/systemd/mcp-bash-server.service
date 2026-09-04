@@ -1,6 +1,6 @@
 [Unit]
 Description=MCP Bash Server
-Documentation=https://github.com/your-org/mcp-bash-server
+Documentation=https://github.com/darkrain/mcp-bash-server
 After=network.target
 Wants=network.target
 
